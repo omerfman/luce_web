@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RLS Fix - Adım Adım Rehber</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+            line-height: 1.6;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1a1a1a;
+            border-bottom: 3px solid #3ecf8e;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        .step {
+            background: #f9f9f9;
+            border-left: 4px solid #3ecf8e;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .step h2 {
+            margin-top: 0;
+            color: #2d2d2d;
+            font-size: 1.3em;
+        }
+        .step-number {
+            display: inline-block;
+            background: #3ecf8e;
+            color: white;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            text-align: center;
+            border-radius: 50%;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .button {
+            display: inline-block;
+            background: #3ecf8e;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 10px 10px 10px 0;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        .button:hover {
+            background: #2da771;
+        }
+        .button.secondary {
+            background: #666;
+        }
+        .button.secondary:hover {
+            background: #555;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+        .error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+        .checklist li {
+            padding: 8px 0;
+            padding-left: 30px;
+            position: relative;
+        }
+        .checklist li:before {
+            content: "☐";
+            position: absolute;
+            left: 0;
+            font-size: 1.2em;
+            color: #3ecf8e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 RLS Infinite Recursion Fix - Adım Adım Rehber</h1>
+        
+        <div class="error">
+            <strong>⚠️ Mevcut Hata:</strong><br>
+            <code>infinite recursion detected in policy for relation "users"</code>
+            <br><br>
+            <strong>Sebep:</strong> has_permission() fonksiyonu users tablosunu çağırıyor, bu da RLS policy'yi tetikliyor, policy tekrar has_permission() çağırıyor → sonsuz döngü
+        </div>
+
+        <div class="step">
+            <h2><span class="step-number">1</span>Supabase SQL Editor'ı Açın</h2>
+            <p>Aşağıdaki butona tıklayarak Supabase SQL Editor'ı yeni sekmede açın:</p>
+            <a href="https://supabase.com/dashboard/project/plwmqofncmkgxhushucg/sql/new" class="button" target="_blank">
+                🔗 Supabase SQL Editor'ı Aç
+            </a>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-number">2</span>SQL Script'i Kopyalayın</h2>
+            <p>VS Code'da açık olan <strong>fix-rls-recursion.sql</strong> dosyasının tüm içeriğini kopyalayın (Ctrl+A, Ctrl+C)</p>
+            <p>Veya aşağıdaki butona tıklayarak dosyayı VS Code'da açın:</p>
+            <a href="vscode://file/d:/islerim/Luce%20Mimarl%C4%B1k/web_site/luce_web/scripts/fix-rls-recursion.sql" class="button secondary">
+                📄 SQL Dosyasını Aç (VS Code)
+            </a>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-number">3</span>Script'i Supabase'e Yapıştırın ve Çalıştırın</h2>
+            <p>SQL Editor'da:</p>
+            <ol>
+                <li>Kopyaladığınız SQL kodunu yapıştırın (Ctrl+V)</li>
+                <li><strong>Run</strong> butonuna tıklayın (veya Ctrl+Enter)</li>
+                <li>Yeşil "Success" mesajını bekleyin</li>
+            </ol>
+            
+            <div class="success">
+                <strong>✅ Beklenen Çıktı:</strong><br>
+                <code>✅ RLS policies fixed!</code><br>
+                <code>✅ has_permission() now uses SECURITY DEFINER</code><br>
+                <code>✅ Users table policies recreated without recursion</code>
+            </div>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-number">4</span>Browser'ı Yenileyin ve Login Deneyin</h2>
+            <p>Script başarıyla çalıştıktan sonra:</p>
+            <ul class="checklist">
+                <li>Browser'ı tamamen yenileyin (Ctrl+Shift+R veya F5)</li>
+                <li>Login sayfasına gidin: <code>http://localhost:3000/login</code></li>
+                <li><code>superadmin@luce.com</code> ile giriş yapın</li>
+                <li>Console'da hata olup olmadığını kontrol edin (F12)</li>
+            </ul>
+        </div>
+
+        <div class="warning">
+            <strong>💡 Önemli Notlar:</strong>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Script sadece <strong>bir kere</strong> çalıştırılmalı</li>
+                <li>SQL Editor'da hata alırsanız, hatayı kopyalayıp bana gönderin</li>
+                <li>Login başarılı olursa Console'da artık <code>infinite recursion</code> hatası görünmeyecek</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h2><span class="step-number">5</span>Başarı Kontrolü</h2>
+            <p>Script çalıştıktan ve login denedikten sonra bana şunu bildirin:</p>
+            <ul>
+                <li>✅ Script başarıyla çalıştı mı?</li>
+                <li>✅ Login başarılı oldu mu?</li>
+                <li>✅ Console'da hala hata var mı?</li>
+            </ul>
+        </div>
+
+        <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;">
+
+        <h3>❓ Sorun Yaşarsanız</h3>
+        <p>Eğer:</p>
+        <ul>
+            <li>SQL Script çalıştırırken hata alırsanız → Hatayı bana gönderin</li>
+            <li>Login hala başarısız olursa → Console'daki yeni hata mesajlarını gönderin</li>
+            <li>Şifrenizi hatırlamıyorsanız → Bana bildirin, reset edeyim</li>
+        </ul>
+
+        <div class="code-block">
+# Script başarıyla çalıştıktan sonra test kullanıcısı oluşturmak için:
+node scripts/manage-users.js create-user "test@luce.com" "test123" "Test User" "Admin"
+        </div>
+    </div>
+</body>
+</html>
