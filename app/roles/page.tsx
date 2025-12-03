@@ -11,26 +11,26 @@ import { supabase } from '@/lib/supabase/client';
 import { Role, Permission } from '@/types';
 
 const AVAILABLE_PERMISSIONS = [
-  { resource: 'users', action: 'create', scope: 'company', label: 'Kullanıcı Oluştur' },
-  { resource: 'users', action: 'read', scope: 'company', label: 'Kullanıcı Görüntüle' },
-  { resource: 'users', action: 'update', scope: 'company', label: 'Kullanıcı Düzenle' },
-  { resource: 'users', action: 'delete', scope: 'company', label: 'Kullanıcı Sil' },
-  { resource: 'projects', action: 'create', scope: 'company', label: 'Proje Oluştur' },
-  { resource: 'projects', action: 'read', scope: 'company', label: 'Proje Görüntüle' },
-  { resource: 'projects', action: 'update', scope: 'company', label: 'Proje Düzenle' },
-  { resource: 'projects', action: 'delete', scope: 'company', label: 'Proje Sil' },
-  { resource: 'invoices', action: 'create', scope: 'company', label: 'Fatura Oluştur' },
-  { resource: 'invoices', action: 'read', scope: 'company', label: 'Fatura Görüntüle' },
-  { resource: 'invoices', action: 'update', scope: 'company', label: 'Fatura Düzenle' },
-  { resource: 'invoices', action: 'delete', scope: 'company', label: 'Fatura Sil' },
-  { resource: 'roles', action: 'create', scope: 'company', label: 'Rol Oluştur' },
-  { resource: 'roles', action: 'read', scope: 'company', label: 'Rol Görüntüle' },
-  { resource: 'roles', action: 'update', scope: 'company', label: 'Rol Düzenle' },
-  { resource: 'roles', action: 'delete', scope: 'company', label: 'Rol Sil' },
+  { resource: 'users' as const, action: 'create' as const, scope: 'company' as const, label: 'Kullanıcı Oluştur' },
+  { resource: 'users' as const, action: 'read' as const, scope: 'company' as const, label: 'Kullanıcı Görüntüle' },
+  { resource: 'users' as const, action: 'update' as const, scope: 'company' as const, label: 'Kullanıcı Düzenle' },
+  { resource: 'users' as const, action: 'delete' as const, scope: 'company' as const, label: 'Kullanıcı Sil' },
+  { resource: 'projects' as const, action: 'create' as const, scope: 'company' as const, label: 'Proje Oluştur' },
+  { resource: 'projects' as const, action: 'read' as const, scope: 'company' as const, label: 'Proje Görüntüle' },
+  { resource: 'projects' as const, action: 'update' as const, scope: 'company' as const, label: 'Proje Düzenle' },
+  { resource: 'projects' as const, action: 'delete' as const, scope: 'company' as const, label: 'Proje Sil' },
+  { resource: 'invoices' as const, action: 'create' as const, scope: 'company' as const, label: 'Fatura Oluştur' },
+  { resource: 'invoices' as const, action: 'read' as const, scope: 'company' as const, label: 'Fatura Görüntüle' },
+  { resource: 'invoices' as const, action: 'update' as const, scope: 'company' as const, label: 'Fatura Düzenle' },
+  { resource: 'invoices' as const, action: 'delete' as const, scope: 'company' as const, label: 'Fatura Sil' },
+  { resource: 'roles' as const, action: 'create' as const, scope: 'company' as const, label: 'Rol Oluştur' },
+  { resource: 'roles' as const, action: 'read' as const, scope: 'company' as const, label: 'Rol Görüntüle' },
+  { resource: 'roles' as const, action: 'update' as const, scope: 'company' as const, label: 'Rol Düzenle' },
+  { resource: 'roles' as const, action: 'delete' as const, scope: 'company' as const, label: 'Rol Sil' },
 ];
 
 export default function RolesPage() {
-  const { user, company, hasPermission } = useAuth();
+  const { company, hasPermission } = useAuth();
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);

@@ -7,7 +7,7 @@ import type { NextRequest } from 'next/server';
  * Use this in API routes to verify user permissions
  */
 export async function checkServerPermission(
-  request: NextRequest,
+  _request: NextRequest,
   resource: string,
   action: string,
   scope: string = 'company'

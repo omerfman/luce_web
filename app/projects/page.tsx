@@ -13,7 +13,7 @@ import { Project, ProjectStatus } from '@/types';
 import Link from 'next/link';
 
 export default function ProjectsPage() {
-  const { user, company, hasPermission } = useAuth();
+  const { company, hasPermission } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,7 +76,7 @@ export default function ProjectsPage() {
         description: '',
         start_date: '',
         end_date: '',
-        status: 'planned',
+        status: ProjectStatus.PLANNED,
       });
       setIsModalOpen(false);
       loadProjects();

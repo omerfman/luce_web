@@ -37,15 +37,15 @@ export const supabaseAdmin = createClient<Database>(
  * @param sql - SQL query string
  * @returns Query result
  */
-export async function executeSQL(sql: string) {
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { query: sql });
+// export async function executeSQL(sql: string) {
+//   const { data, error } = await supabaseAdmin.rpc('exec_sql', { query: sql });
   
-  if (error) {
-    throw new Error(`SQL execution failed: ${error.message}`);
-  }
+//   if (error) {
+//     throw new Error(`SQL execution failed: ${error.message}`);
+//   }
   
-  return data;
-}
+//   return data;
+// }
 
 /**
  * Assign user to company and role
@@ -100,7 +100,7 @@ export async function assignUserRole(
           role_id: role.id,
           is_active: true,
           updated_at: new Date().toISOString(),
-        })
+        } as any)
         .eq('id', authUser.id);
 
       if (updateError) throw updateError;
@@ -117,7 +117,7 @@ export async function assignUserRole(
           name: authUser.user_metadata?.full_name || email.split('@')[0],
           email: email,
           is_active: true,
-        });
+        } as any);
 
       if (insertError) throw insertError;
       
@@ -158,7 +158,7 @@ export async function createCompany(
       address: data?.address || '',
       phone: data?.phone || '',
       email: data?.email || '',
-    })
+    } as any)
     .select()
     .single();
 
@@ -195,7 +195,7 @@ export async function listCompanyUsers(companyId: string) {
 export async function deactivateUser(userId: string) {
   const { error } = await supabaseAdmin
     .from('users')
-    .update({ is_active: false })
+    .update({ is_active: false } as any)
     .eq('id', userId);
 
   if (error) throw error;

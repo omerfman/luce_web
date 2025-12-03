@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { emailSchema } from '@/lib/validation';
-import { useRouter } from 'next/navigation';
+// import { useRouter } from 'next/navigation'; // Reserved for future use
 import Link from 'next/link';
 
 export default function SignupPage() {

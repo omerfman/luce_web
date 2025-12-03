@@ -60,15 +60,18 @@ export async function POST(request: NextRequest) {
       .eq('id', session.user.id)
       .single();
 
-    if (!currentUser) {
+    if (!currentUser || !currentUser.role) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     // Check permissions
-    const hasGlobalPermission = currentUser.role?.permissions?.some(
+    const userRole = currentUser.role as any;
+    const permissions = Array.isArray(userRole.permissions) ? userRole.permissions : [];
+    
+    const hasGlobalPermission = permissions.some(
       (p: any) => p.resource === '*' && p.action === '*'
     );
-    const hasUserCreatePermission = currentUser.role?.permissions?.some(
+    const hasUserCreatePermission = permissions.some(
       (p: any) =>
         (p.resource === 'users' || p.resource === '*') &&
         (p.action === 'create' || p.action === '*')

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+// import { Button } from '@/components/ui/Button'; // Unused, reserved for future
 import { supabase } from '@/lib/supabase/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Project, Invoice } from '@/types';
@@ -60,11 +60,11 @@ export default function ProjectDetailPage() {
   }
 
   const totalAmount = invoices.reduce((sum, inv) => sum + inv.amount, 0);
-  const monthlyData = invoices.reduce((acc: Record<string, number>, inv) => {
-    const month = new Date(inv.date).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' });
-    acc[month] = (acc[month] || 0) + inv.amount;
-    return acc;
-  }, {});
+  // const monthlyData = invoices.reduce((acc: Record<string, number>, inv) => {
+  //   const month = new Date(inv.invoice_date).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' });
+  //   acc[month] = (acc[month] || 0) + inv.amount;
+  //   return acc;
+  // }, {}); // Reserved for future charts
 
   const top5Invoices = [...invoices]
     .sort((a, b) => b.amount - a.amount)
@@ -178,9 +178,9 @@ export default function ProjectDetailPage() {
                   >
                     <div>
                       <p className="text-sm font-medium text-secondary-900">
-                        {(invoice.metadata as any)?.supplier || 'Tedarikçi belirtilmemiş'}
+                        Fatura #{invoice.invoice_number}
                       </p>
-                      <p className="text-xs text-secondary-500">{formatDate(invoice.date)}</p>
+                      <p className="text-xs text-secondary-500">{formatDate(invoice.invoice_date)}</p>
                     </div>
                     <p className="text-lg font-semibold text-primary-600">
                       {formatCurrency(invoice.amount)}
@@ -223,10 +223,10 @@ export default function ProjectDetailPage() {
                   invoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-secondary-50">
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-secondary-900">
-                        {formatDate(invoice.date)}
+                        {formatDate(invoice.invoice_date)}
                       </td>
                       <td className="px-6 py-4 text-sm text-secondary-900">
-                        {(invoice.metadata as any)?.supplier || '-'}
+                        {invoice.invoice_number}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-secondary-900">
                         {formatCurrency(invoice.amount)}
