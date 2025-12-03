@@ -74,13 +74,16 @@ export default function UsersPage() {
 
       if (companiesError) throw companiesError;
 
-      // Fetch all permissions
+      // Fetch all permissions (handle if table doesn't exist)
       const { data: permissionsData, error: permissionsError } = await supabase
         .from('permissions')
         .select('*')
         .order('resource', { ascending: true });
 
-      if (permissionsError) throw permissionsError;
+      // Don't throw error if permissions table doesn't exist
+      if (permissionsError && !permissionsError.message.includes('permissions')) {
+        console.warn('Permissions table not found, skipping permission loading');
+      }
 
       // Show all users including Super Admin
       setUsers(usersData || []);

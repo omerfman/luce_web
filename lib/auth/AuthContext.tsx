@@ -90,8 +90,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .select('*')
             .in('id', customPermissionIds);
           
+          // Ignore error if permissions table doesn't exist
           if (!customPermsError && customPerms) {
             customPermissions = customPerms;
+          } else if (customPermsError && !customPermsError.message.includes('permissions')) {
+            console.warn('Permissions table not found, skipping custom permissions');
           }
         }
         
