@@ -88,8 +88,10 @@ export default function UsersPage() {
 
       // Filter out Super Admin users and wildcard permissions
       const filteredUsers = (usersData || []).filter(user => user.role?.name !== 'Super Admin');
+      
+      // Filter permissions: remove wildcards and 'all' scope (only Super Admin can use those)
       const filteredPermissions = (permissionsData || []).filter(perm => 
-        !(perm.resource === '*' && perm.action === '*')
+        !(perm.resource === '*' && perm.action === '*') && perm.scope !== 'all'
       );
 
       setUsers(filteredUsers);

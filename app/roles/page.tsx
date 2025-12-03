@@ -10,23 +10,29 @@ import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabase/client';
 import { Role, Permission } from '@/types';
 
+// Only company-scoped permissions (Super Admin excluded)
+// Admins can only grant permissions within their company scope
 const AVAILABLE_PERMISSIONS = [
-  { resource: 'users' as const, action: 'create' as const, scope: 'company' as const, label: 'Kullanıcı Oluştur' },
-  { resource: 'users' as const, action: 'read' as const, scope: 'company' as const, label: 'Kullanıcı Görüntüle' },
-  { resource: 'users' as const, action: 'update' as const, scope: 'company' as const, label: 'Kullanıcı Düzenle' },
-  { resource: 'users' as const, action: 'delete' as const, scope: 'company' as const, label: 'Kullanıcı Sil' },
-  { resource: 'projects' as const, action: 'create' as const, scope: 'company' as const, label: 'Proje Oluştur' },
-  { resource: 'projects' as const, action: 'read' as const, scope: 'company' as const, label: 'Proje Görüntüle' },
-  { resource: 'projects' as const, action: 'update' as const, scope: 'company' as const, label: 'Proje Düzenle' },
-  { resource: 'projects' as const, action: 'delete' as const, scope: 'company' as const, label: 'Proje Sil' },
-  { resource: 'invoices' as const, action: 'create' as const, scope: 'company' as const, label: 'Fatura Oluştur' },
-  { resource: 'invoices' as const, action: 'read' as const, scope: 'company' as const, label: 'Fatura Görüntüle' },
-  { resource: 'invoices' as const, action: 'update' as const, scope: 'company' as const, label: 'Fatura Düzenle' },
-  { resource: 'invoices' as const, action: 'delete' as const, scope: 'company' as const, label: 'Fatura Sil' },
-  { resource: 'roles' as const, action: 'create' as const, scope: 'company' as const, label: 'Rol Oluştur' },
-  { resource: 'roles' as const, action: 'read' as const, scope: 'company' as const, label: 'Rol Görüntüle' },
-  { resource: 'roles' as const, action: 'update' as const, scope: 'company' as const, label: 'Rol Düzenle' },
-  { resource: 'roles' as const, action: 'delete' as const, scope: 'company' as const, label: 'Rol Sil' },
+  { resource: 'users' as const, action: 'create' as const, scope: 'company' as const, label: 'Kullanıcı Oluştur (Şirket)' },
+  { resource: 'users' as const, action: 'read' as const, scope: 'company' as const, label: 'Kullanıcı Görüntüle (Şirket)' },
+  { resource: 'users' as const, action: 'update' as const, scope: 'company' as const, label: 'Kullanıcı Düzenle (Şirket)' },
+  { resource: 'users' as const, action: 'delete' as const, scope: 'company' as const, label: 'Kullanıcı Sil (Şirket)' },
+  { resource: 'projects' as const, action: 'create' as const, scope: 'company' as const, label: 'Proje Oluştur (Şirket)' },
+  { resource: 'projects' as const, action: 'read' as const, scope: 'company' as const, label: 'Proje Görüntüle (Şirket)' },
+  { resource: 'projects' as const, action: 'update' as const, scope: 'company' as const, label: 'Proje Düzenle (Şirket)' },
+  { resource: 'projects' as const, action: 'delete' as const, scope: 'company' as const, label: 'Proje Sil (Şirket)' },
+  { resource: 'invoices' as const, action: 'create' as const, scope: 'company' as const, label: 'Fatura Oluştur (Şirket)' },
+  { resource: 'invoices' as const, action: 'read' as const, scope: 'company' as const, label: 'Fatura Görüntüle (Şirket)' },
+  { resource: 'invoices' as const, action: 'update' as const, scope: 'company' as const, label: 'Fatura Düzenle (Şirket)' },
+  { resource: 'invoices' as const, action: 'delete' as const, scope: 'company' as const, label: 'Fatura Sil (Şirket)' },
+  { resource: 'roles' as const, action: 'create' as const, scope: 'company' as const, label: 'Rol Oluştur (Şirket)' },
+  { resource: 'roles' as const, action: 'read' as const, scope: 'company' as const, label: 'Rol Görüntüle (Şirket)' },
+  { resource: 'roles' as const, action: 'update' as const, scope: 'company' as const, label: 'Rol Düzenle (Şirket)' },
+  { resource: 'roles' as const, action: 'delete' as const, scope: 'company' as const, label: 'Rol Sil (Şirket)' },
+  { resource: 'companies' as const, action: 'read' as const, scope: 'company' as const, label: 'Şirket Bilgisi Görüntüle' },
+  { resource: 'companies' as const, action: 'update' as const, scope: 'company' as const, label: 'Şirket Bilgisi Düzenle' },
+  { resource: 'reports' as const, action: 'read' as const, scope: 'company' as const, label: 'Rapor Görüntüle (Şirket)' },
+  { resource: 'reports' as const, action: 'create' as const, scope: 'company' as const, label: 'Rapor Oluştur (Şirket)' },
 ];
 
 export default function RolesPage() {
