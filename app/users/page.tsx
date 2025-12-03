@@ -259,37 +259,38 @@ export default function UsersPage() {
 
   return (
     <Sidebar>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-secondary-900">Kullanıcılar</h1>
+      <div className="space-y-4 lg:space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl lg:text-2xl font-bold text-secondary-900">Kullanıcılar</h1>
           {hasPermission('users', 'create') && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="btn btn-primary"
+              className="btn btn-primary text-sm lg:text-base"
             >
-              + Yeni Kullanıcı Ekle
+              + Yeni Kullanıcı
             </button>
           )}
         </div>
 
         {error && (
-          <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+          <div className="rounded-md bg-red-50 p-3 lg:p-4 text-xs lg:text-sm text-red-700">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="rounded-md bg-green-50 p-4 text-sm text-green-700">
+          <div className="rounded-md bg-green-50 p-3 lg:p-4 text-xs lg:text-sm text-green-700">
             {success}
           </div>
         )}
 
         <Card>
           <CardHeader>
-            <CardTitle>Kullanıcı Listesi ({users.length})</CardTitle>
+            <CardTitle className="text-base lg:text-lg">Kullanıcı Listesi ({users.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            {/* Desktop Table */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="min-w-full divide-y divide-secondary-200">
                 <thead className="bg-secondary-50">
                   <tr>
@@ -377,18 +378,82 @@ export default function UsersPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Cards */}
+            <div className="lg:hidden space-y-3">
+              {users.map((user: any) => (
+                <div key={user.id} className="bg-white border border-secondary-200 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-secondary-900 truncate">
+                          {user.name}
+                        </p>
+                        {user.meta?.custom_permissions?.length > 0 && (
+                          <span className="text-xs text-primary-600" title="Özel yetkiler">⭐</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-secondary-500 truncate mt-1">{user.email}</p>
+                    </div>
+                    <span
+                      className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        user.is_active
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {user.is_active ? 'Aktif' : 'Pasif'}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-secondary-500">Rol:</span>
+                      <span className="ml-1 px-2 py-0.5 bg-primary-100 text-primary-800 rounded-full font-medium">
+                        {user.role?.name || '-'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-secondary-500">Şirket:</span>
+                      <span className="ml-1 text-secondary-900">{user.company?.name || '-'}</span>
+                    </div>
+                  </div>
+
+                  {(hasPermission('users', 'update') || hasPermission('users', 'delete')) && (
+                    <div className="flex gap-2 pt-2 border-t border-secondary-100">
+                      {hasPermission('users', 'update') && (
+                        <button
+                          onClick={() => handleEdit(user)}
+                          className="flex-1 px-3 py-2 text-xs font-medium text-primary-700 bg-primary-50 rounded-md hover:bg-primary-100"
+                        >
+                          Düzenle
+                        </button>
+                      )}
+                      {hasPermission('users', 'delete') && (
+                        <button
+                          onClick={() => handleDelete(user)}
+                          className="flex-1 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100"
+                        >
+                          Sil
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
         {/* Add User Modal */}
         {showAddModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
-              <h2 className="text-xl font-bold text-secondary-900 mb-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-4 lg:p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg lg:text-xl font-bold text-secondary-900 mb-4">
                 Yeni Kullanıcı Ekle
               </h2>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-3 lg:space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">
                     İsim
@@ -504,12 +569,12 @@ export default function UsersPage() {
         {/* Edit User Modal */}
         {showEditModal && editingUser && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-              <h2 className="text-xl font-bold text-secondary-900 mb-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full p-4 lg:p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg lg:text-xl font-bold text-secondary-900 mb-4">
                 Kullanıcı Düzenle: {editingUser.name}
               </h2>
 
-              <form onSubmit={handleEditSubmit} className="space-y-4">
+              <form onSubmit={handleEditSubmit} className="space-y-3 lg:space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-secondary-700 mb-1">
                     İsim

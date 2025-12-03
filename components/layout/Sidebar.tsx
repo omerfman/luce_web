@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { cn } from '@/lib/utils';
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 
 interface SidebarProps {
   children: ReactNode;
@@ -14,6 +14,7 @@ interface SidebarProps {
 export function Sidebar({ children }: SidebarProps) {
   const { user, company, signOut, hasPermission } = useAuth();
   const pathname = usePathname();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, resource: null, action: null },
@@ -34,8 +35,27 @@ export function Sidebar({ children }: SidebarProps) {
 
   return (
     <div className="flex h-screen bg-secondary-50">
+      {/* Mobile menu button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="fixed top-4 left-4 z-50 rounded-md bg-white p-2 text-secondary-600 shadow-md lg:hidden"
+      >
+        {isMobileMenuOpen ? <XIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
+      </button>
+
+      {/* Mobile overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="flex w-64 flex-col border-r border-secondary-200 bg-white">
+      <div className={cn(
+        "fixed lg:static inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-secondary-200 bg-white transition-transform duration-300 lg:translate-x-0",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
         {/* Logo */}
         <div className="flex h-16 items-center justify-center border-b border-secondary-200 px-4">
           <Image 
@@ -63,6 +83,7 @@ export function Sidebar({ children }: SidebarProps) {
               <Link
                 key={item.name}
                 href={item.href}
+                onClick={() => setIsMobileMenuOpen(false)}
                 className={cn(
                   'sidebar-link',
                   isActive && 'sidebar-link-active'
@@ -95,14 +116,16 @@ export function Sidebar({ children }: SidebarProps) {
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex h-16 items-center border-b border-secondary-200 bg-white px-6">
-          <h2 className="text-xl font-semibold text-secondary-900">
-            {navigation.find((item) => item.href === pathname)?.name || 'Dashboard'}
-          </h2>
+        <header className="flex h-16 items-center border-b border-secondary-200 bg-white px-4 lg:px-6">
+          <div className="ml-12 lg:ml-0">
+            <h2 className="text-lg lg:text-xl font-semibold text-secondary-900">
+              {navigation.find((item) => item.href === pathname)?.name || 'Dashboard'}
+            </h2>
+          </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );
@@ -161,6 +184,22 @@ function LogoutIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+  );
+}
+
+function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
   );
 }
