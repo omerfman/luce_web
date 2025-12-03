@@ -24,6 +24,7 @@ export interface User {
   company_id: string;
   role_id: string;
   meta: Record<string, any> | null;
+  custom_permissions?: Permission[]; // User-specific permission overrides
   created_at: string;
   // Relations
   company?: Company;
@@ -119,6 +120,13 @@ export interface Permission {
   resource: PermissionResource;
   action: PermissionAction;
   scope: PermissionScope;
+}
+
+// Database permission record with ID
+export interface PermissionRecord extends Permission {
+  id: string;
+  description: string;
+  created_at?: string;
 }
 
 // Example permission strings:

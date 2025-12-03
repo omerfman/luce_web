@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
-import { User, Role, Company, Permission } from '@/types';
+import { User, Role, Company, Permission, PermissionRecord } from '@/types';
 
 interface AuthContextType {
   user: User | null;
@@ -77,7 +77,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(userData as any);
         setRole(userData.role as any);
         setCompany(userData.company as any);
-        setPermissions((userData.role as any)?.permissions || []);
+        
+        // Combine role permissions with user's custom permissions
+        const rolePermissions = (userData.role as any)?.permissions || [];
+        const customPermissionIds = userData.meta?.custom_permissions || [];
+        
+        // Fetch custom permissions if there are any
+        let customPermissions: PermissionRecord[] = [];
+        if (customPermissionIds.length > 0) {
+          const { data: customPerms, error: customPermsError } = await supabase
+            .from('permissions')
+            .select('*')
+            .in('id', customPermissionIds);
+          
+          if (!customPermsError && customPerms) {
+            customPermissions = customPerms;
+          }
+        }
+        
+        // Merge permissions (remove duplicates by id)
+        const allPermissions = [...rolePermissions];
+        customPermissions.forEach(customPerm => {
+          if (!allPermissions.find(p => p.id === customPerm.id)) {
+            allPermissions.push(customPerm);
+          }
+        });
+        
+        setPermissions(allPermissions);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
