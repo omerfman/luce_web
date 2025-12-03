@@ -58,10 +58,11 @@ export default function UsersPage() {
 
       if (usersError) throw usersError;
 
-      // Fetch roles
+      // Fetch roles (exclude Super Admin from list)
       const { data: rolesData, error: rolesError } = await supabase
         .from('roles')
         .select('*')
+        .neq('name', 'Super Admin')
         .order('name');
 
       if (rolesError) throw rolesError;
@@ -85,11 +86,16 @@ export default function UsersPage() {
         console.warn('Permissions table not found, skipping permission loading');
       }
 
-      // Show all users including Super Admin
-      setUsers(usersData || []);
+      // Filter out Super Admin users and wildcard permissions
+      const filteredUsers = (usersData || []).filter(user => user.role?.name !== 'Super Admin');
+      const filteredPermissions = (permissionsData || []).filter(perm => 
+        !(perm.resource === '*' && perm.action === '*')
+      );
+
+      setUsers(filteredUsers);
       setRoles(rolesData || []);
       setCompanies(companiesData || []);
-      setAllPermissions(permissionsData || []);
+      setAllPermissions(filteredPermissions);
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setError(err.message);
