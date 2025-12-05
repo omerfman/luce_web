@@ -156,6 +156,20 @@ export default function UsersPage() {
     setShowEditModal(true);
   }
 
+  // Check if a permission is from role (not custom)
+  function isRolePermission(permissionId: string): boolean {
+    if (!editingUser?.role?.permissions) return false;
+    
+    const permission = allPermissions.find(p => p.id === permissionId);
+    if (!permission) return false;
+    
+    return editingUser.role.permissions.some(rp =>
+      rp.resource === permission.resource &&
+      rp.action === permission.action &&
+      rp.scope === permission.scope
+    );
+  }
+
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingUser) return;
@@ -215,15 +229,49 @@ export default function UsersPage() {
   }
 
   function togglePermission(permissionId: string) {
+    const isFromRole = isRolePermission(permissionId);
+    const isInCustom = editFormData.custom_permissions.includes(permissionId);
+    
     setEditFormData(prev => {
-      const exists = prev.custom_permissions.includes(permissionId);
-      return {
-        ...prev,
-        custom_permissions: exists
-          ? prev.custom_permissions.filter(id => id !== permissionId)
-          : [...prev.custom_permissions, permissionId],
-      };
+      if (isFromRole && !isInCustom) {
+        // Role permission, not in custom - add to custom as "remove" (negative permission)
+        // We'll use a prefix to mark it as removed
+        return {
+          ...prev,
+          custom_permissions: [...prev.custom_permissions, `remove:${permissionId}`],
+        };
+      } else if (isFromRole && isInCustom) {
+        // Role permission, already in custom as "remove" - remove from custom to restore
+        return {
+          ...prev,
+          custom_permissions: prev.custom_permissions.filter(id => id !== `remove:${permissionId}`),
+        };
+      } else if (!isFromRole && isInCustom) {
+        // Custom permission - remove it
+        return {
+          ...prev,
+          custom_permissions: prev.custom_permissions.filter(id => id !== permissionId),
+        };
+      } else {
+        // Not in role, not in custom - add it
+        return {
+          ...prev,
+          custom_permissions: [...prev.custom_permissions, permissionId],
+        };
+      }
     });
+  }
+
+  // Check if a permission is checked (either from role or custom, and not removed)
+  function isPermissionChecked(permissionId: string): boolean {
+    const isFromRole = isRolePermission(permissionId);
+    const isInCustom = editFormData.custom_permissions.includes(permissionId);
+    const isRemoved = editFormData.custom_permissions.includes(`remove:${permissionId}`);
+    
+    if (isFromRole && !isRemoved) return true;
+    if (!isFromRole && isInCustom) return true;
+    
+    return false;
   }
 
   // Group permissions by resource
@@ -626,7 +674,7 @@ export default function UsersPage() {
 
                 <div className="border-t pt-4 mt-4">
                   <label className="block text-sm font-medium text-secondary-700 mb-3">
-                    Özel Yetkiler (Rolün haricinde ek yetkiler)
+                    Yetkiler (Rol + Özel Yetkiler)
                   </label>
                   <div className="space-y-4 max-h-64 overflow-y-auto">
                     {Object.entries(groupedPermissions).map(([resource, perms]) => (
@@ -635,25 +683,41 @@ export default function UsersPage() {
                           {resource}
                         </h4>
                         <div className="space-y-1">
-                          {perms.map((perm) => (
-                            <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editFormData.custom_permissions.includes(perm.id)}
-                                onChange={() => togglePermission(perm.id)}
-                                className="rounded border-gray-300"
-                              />
-                              <span className="text-sm text-secondary-700">
-                                {perm.action} - {perm.description}
-                              </span>
-                            </label>
-                          ))}
+                          {perms.map((perm) => {
+                            const isFromRole = isRolePermission(perm.id);
+                            const isChecked = isPermissionChecked(perm.id);
+                            
+                            return (
+                              <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => togglePermission(perm.id)}
+                                  className="rounded border-gray-300"
+                                />
+                                <span className="text-sm text-secondary-700 flex-1">
+                                  {perm.action} - {perm.description}
+                                </span>
+                                {isFromRole && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                    Rolden
+                                  </span>
+                                )}
+                                {!isFromRole && isChecked && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                                    Özel
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
                   </div>
                   <p className="text-xs text-secondary-500 mt-2">
-                    Seçili yetkiler kullanıcının rolüne ek olarak verilecektir.
+                    💡 <strong>Mavi etiketli</strong> yetkiler rolden gelir. Bunları kaldırabilirsiniz.<br />
+                    💡 <strong>Yeşil etiketli</strong> yetkiler özel olarak eklenmiştir.
                   </p>
                 </div>
 

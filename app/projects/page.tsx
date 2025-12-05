@@ -17,7 +17,9 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -28,6 +30,8 @@ export default function ProjectsPage() {
   });
 
   const canCreate = hasPermission('projects', 'create');
+  const canUpdate = hasPermission('projects', 'update');
+  const canDelete = hasPermission('projects', 'delete');
 
   useEffect(() => {
     if (company) {
@@ -40,11 +44,36 @@ export default function ProjectsPage() {
       const { data, error } = await supabase
         .from('projects')
         .select('*')
-        .eq('company_id', company!.id)
-        .order('created_at', { ascending: false });
+        .eq('company_id', company!.id);
 
       if (error) throw error;
-      setProjects(data || []);
+      
+      // Sort projects: if name starts with number, sort numerically, otherwise alphabetically
+      const sortedProjects = (data || []).sort((a, b) => {
+        const aFirstWord = a.name.split(' ')[0];
+        const bFirstWord = b.name.split(' ')[0];
+        const aNum = parseInt(aFirstWord);
+        const bNum = parseInt(bFirstWord);
+        
+        const aIsNumber = !isNaN(aNum);
+        const bIsNumber = !isNaN(bNum);
+        
+        if (aIsNumber && bIsNumber) {
+          // Both start with numbers, sort numerically
+          return aNum - bNum;
+        } else if (aIsNumber) {
+          // Only a starts with number, a comes first
+          return -1;
+        } else if (bIsNumber) {
+          // Only b starts with number, b comes first
+          return 1;
+        } else {
+          // Neither starts with number, sort alphabetically
+          return a.name.localeCompare(b.name, 'tr');
+        }
+      });
+      
+      setProjects(sortedProjects);
     } catch (error) {
       console.error('Error loading projects:', error);
     } finally {
@@ -85,6 +114,78 @@ export default function ProjectsPage() {
       alert(error.message || 'Proje oluşturulurken hata oluştu');
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function openEditModal(project: Project, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedProject(project);
+    setFormData({
+      name: project.name,
+      description: project.description || '',
+      start_date: project.start_date || '',
+      end_date: project.end_date || '',
+      status: project.status as ProjectStatus,
+    });
+    setIsEditModalOpen(true);
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProject) return;
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          name: formData.name,
+          description: formData.description || null,
+          start_date: formData.start_date || null,
+          end_date: formData.end_date || null,
+          status: formData.status,
+        })
+        .eq('id', selectedProject.id);
+
+      if (error) throw error;
+
+      setFormData({
+        name: '',
+        description: '',
+        start_date: '',
+        end_date: '',
+        status: ProjectStatus.PLANNED,
+      });
+      setSelectedProject(null);
+      setIsEditModalOpen(false);
+      loadProjects();
+    } catch (error: any) {
+      console.error('Error updating project:', error);
+      alert(error.message || 'Proje güncellenirken hata oluştu');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleDelete(project: Project, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!confirm(`"${project.name}" projesini silmek istediğinizden emin misiniz?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', project.id);
+
+      if (error) throw error;
+      loadProjects();
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      alert(error.message || 'Proje silinirken hata oluştu');
     }
   }
 
@@ -148,13 +249,15 @@ export default function ProjectsPage() {
                     <h3 className="text-lg font-semibold text-secondary-900">
                       {project.name}
                     </h3>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                        statusColors[project.status as ProjectStatus]
-                      }`}
-                    >
-                      {statusLabels[project.status as ProjectStatus]}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                          statusColors[project.status as ProjectStatus]
+                        }`}
+                      >
+                        {statusLabels[project.status as ProjectStatus]}
+                      </span>
+                    </div>
                   </div>
 
                   {project.description && (
@@ -177,6 +280,28 @@ export default function ProjectsPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Action Buttons */}
+                  {(canUpdate || canDelete) && (
+                    <div className="mt-4 flex gap-2 border-t border-secondary-200 pt-3">
+                      {canUpdate && (
+                        <button
+                          onClick={(e) => openEditModal(project, e)}
+                          className="flex-1 rounded-md bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-100"
+                        >
+                          Düzenle
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={(e) => handleDelete(project, e)}
+                          className="flex-1 rounded-md bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+                        >
+                          Sil
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </Card>
               </Link>
             ))
@@ -246,6 +371,73 @@ export default function ProjectsPage() {
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
               Proje Oluştur
+            </Button>
+          </ModalFooter>
+        </form>
+      </Modal>
+
+      {/* Edit Project Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Proje Düzenle"
+        size="lg"
+      >
+        <form onSubmit={handleEditSubmit} className="space-y-4">
+          <Input
+            label="Proje Adı"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            required
+          />
+
+          <Textarea
+            label="Açıklama"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            rows={3}
+          />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Başlangıç Tarihi"
+              type="date"
+              value={formData.start_date}
+              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+            />
+            <Input
+              label="Bitiş Tarihi"
+              type="date"
+              value={formData.end_date}
+              onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-secondary-700">
+              Durum
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) =>
+                setFormData({ ...formData, status: e.target.value as ProjectStatus })
+              }
+              className="input"
+            >
+              <option value="planned">Planlanıyor</option>
+              <option value="active">Aktif</option>
+              <option value="on_hold">Beklemede</option>
+              <option value="completed">Tamamlandı</option>
+              <option value="cancelled">İptal</option>
+            </select>
+          </div>
+
+          <ModalFooter>
+            <Button type="button" variant="ghost" onClick={() => setIsEditModalOpen(false)}>
+              İptal
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Güncelle
             </Button>
           </ModalFooter>
         </form>
