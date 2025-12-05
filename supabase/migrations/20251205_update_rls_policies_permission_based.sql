@@ -8,18 +8,24 @@ CREATE OR REPLACE FUNCTION has_permission(
   p_action TEXT
 )
 RETURNS BOOLEAN AS $$
+DECLARE
+  permission_id TEXT;
+  has_perm BOOLEAN := FALSE;
+  is_removed BOOLEAN := FALSE;
 BEGIN
-  RETURN EXISTS (
-    SELECT 1
-    FROM users u
-    LEFT JOIN roles r ON u.role_id = r.id
-    WHERE u.id = user_id
-    AND (
-      -- Check role permissions
+  -- Get permission ID for this resource+action
+  SELECT id::text INTO permission_id
+  FROM permissions
+  WHERE resource = p_resource AND action = p_action
+  LIMIT 1;
+
+  -- Check if user exists and get their permissions
+  SELECT 
+    -- Check role permissions
+    COALESCE(
       r.permissions @> jsonb_build_array(
         jsonb_build_object('resource', p_resource, 'action', p_action)
       )
-      -- OR check if wildcard permission exists in role
       OR r.permissions @> jsonb_build_array(
         jsonb_build_object('resource', '*', 'action', '*')
       )
@@ -27,21 +33,21 @@ BEGIN
         jsonb_build_object('resource', p_resource, 'action', '*')
       )
       -- Check custom permissions (added)
-      OR u.meta->'custom_permissions' ? (
-        SELECT id::text FROM permissions 
-        WHERE resource = p_resource AND action = p_action
-        LIMIT 1
-      )
-      -- Check if custom permission was NOT removed
-      AND NOT (
-        u.meta->'custom_permissions' ? ('remove:' || (
-          SELECT id::text FROM permissions 
-          WHERE resource = p_resource AND action = p_action
-          LIMIT 1
-        ))
-      )
+      OR (permission_id IS NOT NULL AND u.meta->'custom_permissions' ? permission_id),
+      FALSE
+    ),
+    -- Check if permission was removed
+    COALESCE(
+      permission_id IS NOT NULL AND u.meta->'custom_permissions' ? ('remove:' || permission_id),
+      FALSE
     )
-  );
+  INTO has_perm, is_removed
+  FROM users u
+  LEFT JOIN roles r ON u.role_id = r.id
+  WHERE u.id = user_id;
+
+  -- Return true if has permission and it's not removed
+  RETURN COALESCE(has_perm AND NOT is_removed, FALSE);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -98,18 +104,38 @@ CREATE POLICY "Users with invoices.read can view project links"
 ON invoice_project_links FOR SELECT
 USING (
   has_permission(auth.uid(), 'invoices', 'read')
+  AND EXISTS (
+    SELECT 1 FROM invoices i
+    WHERE i.id = invoice_project_links.invoice_id
+    AND i.company_id = (SELECT company_id FROM users WHERE id = auth.uid())
+  )
 );
 
 CREATE POLICY "Users with invoices.assign can assign projects"
 ON invoice_project_links FOR INSERT
 WITH CHECK (
   has_permission(auth.uid(), 'invoices', 'assign')
+  AND EXISTS (
+    SELECT 1 FROM invoices i
+    WHERE i.id = invoice_project_links.invoice_id
+    AND i.company_id = (SELECT company_id FROM users WHERE id = auth.uid())
+  )
+  AND EXISTS (
+    SELECT 1 FROM projects p
+    WHERE p.id = invoice_project_links.project_id
+    AND p.company_id = (SELECT company_id FROM users WHERE id = auth.uid())
+  )
 );
 
 CREATE POLICY "Users with invoices.assign can remove assignments"
 ON invoice_project_links FOR DELETE
 USING (
   has_permission(auth.uid(), 'invoices', 'assign')
+  AND EXISTS (
+    SELECT 1 FROM invoices i
+    WHERE i.id = invoice_project_links.invoice_id
+    AND i.company_id = (SELECT company_id FROM users WHERE id = auth.uid())
+  )
 );
 
 -- ============================================
