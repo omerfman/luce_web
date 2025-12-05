@@ -1,4 +1,4 @@
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { supabase } from './client';
 
 interface ProjectInvoice {
@@ -6,7 +6,8 @@ interface ProjectInvoice {
   invoice_date: string;
   amount: number;
   file_path: string;
-  project_name: string;
+  project_names: string; // Changed to single string with comma-separated names
+  description?: string;
 }
 
 /**
@@ -18,6 +19,9 @@ export async function generateProjectInvoicesReport(
   try {
     // Create a new PDF document
     const mergedPdf = await PDFDocument.create();
+    
+    // Embed Helvetica font (supports more characters than default)
+    const font = await mergedPdf.embedFont(StandardFonts.Helvetica);
 
     for (const invoice of projectInvoices) {
       // Get signed URL for the invoice PDF
@@ -43,51 +47,109 @@ export async function generateProjectInvoicesReport(
         existingPdf.getPageIndices()
       );
 
-      // Add each page and overlay project name
+      // Add each page and overlay project name at the bottom
       for (let i = 0; i < copiedPages.length; i++) {
         const page = copiedPages[i];
-        const { width, height } = page.getSize();
+        const { width } = page.getSize();
 
-        // Add project name at the top of the first page
-        if (i === 0) {
-          // Add white background rectangle for better readability
-          page.drawRectangle({
-            x: 0,
-            y: height - 60,
-            width: width,
-            height: 60,
-            color: rgb(1, 1, 1),
-            opacity: 0.95,
-          });
+        // Replace Turkish characters to avoid encoding issues
+        const sanitizeText = (text: string) => {
+          return text
+            .replace(/ı/g, 'i')
+            .replace(/İ/g, 'I')
+            .replace(/ğ/g, 'g')
+            .replace(/Ğ/g, 'G')
+            .replace(/ü/g, 'u')
+            .replace(/Ü/g, 'U')
+            .replace(/ş/g, 's')
+            .replace(/Ş/g, 'S')
+            .replace(/ö/g, 'o')
+            .replace(/Ö/g, 'O')
+            .replace(/ç/g, 'c')
+            .replace(/Ç/g, 'C');
+        };
 
-          // Add border
-          page.drawRectangle({
-            x: 10,
-            y: height - 55,
-            width: width - 20,
-            height: 50,
-            borderColor: rgb(0.2, 0.4, 0.8),
-            borderWidth: 2,
-          });
-
-          // Add project name text
-          page.drawText(`PROJE: ${invoice.project_name}`, {
-            x: 20,
-            y: height - 30,
-            size: 18,
-            color: rgb(0.1, 0.2, 0.6),
-          });
-
-          // Add invoice info
-          page.drawText(
-            `Fatura No: ${invoice.invoice_number} | Tarih: ${invoice.invoice_date}`,
-            {
-              x: 20,
-              y: height - 45,
-              size: 10,
-              color: rgb(0.3, 0.3, 0.3),
+        // Prepare project text
+        const projectText = sanitizeText(invoice.project_names);
+        
+        // Prepare description text and calculate height needed
+        let descriptionLines: string[] = [];
+        let boxHeight = 25;
+        
+        if (invoice.description && i === 0) {
+          const descPrefix = 'Aciklama: ';
+          const descContent = sanitizeText(invoice.description);
+          const fullDescText = descPrefix + descContent;
+          
+          // Calculate max characters per line (roughly)
+          const maxCharsPerLine = Math.floor((width - 30) / 3.5); // Approximate chars for font size 7
+          
+          // Split text into lines
+          const words = fullDescText.split(' ');
+          let currentLine = '';
+          
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            if (testLine.length <= maxCharsPerLine) {
+              currentLine = testLine;
+            } else {
+              if (currentLine) descriptionLines.push(currentLine);
+              currentLine = word;
             }
-          );
+          }
+          if (currentLine) descriptionLines.push(currentLine);
+          
+          // Limit to 2 lines max
+          if (descriptionLines.length > 2) {
+            descriptionLines = descriptionLines.slice(0, 2);
+            descriptionLines[1] = descriptionLines[1].substring(0, maxCharsPerLine - 3) + '...';
+          }
+          
+          // Adjust box height based on number of lines
+          boxHeight = 25 + (descriptionLines.length * 10);
+        }
+
+        // Add project info at the bottom of each page
+        // Add white background rectangle for better readability (reduced opacity)
+        page.drawRectangle({
+          x: 0,
+          y: 0,
+          width: width,
+          height: boxHeight + 10,
+          color: rgb(1, 1, 1),
+          opacity: 0.7, // Reduced from 0.95 to 0.7
+        });
+
+        // Add border
+        page.drawRectangle({
+          x: 10,
+          y: 5,
+          width: width - 20,
+          height: boxHeight,
+          borderColor: rgb(0.2, 0.4, 0.8),
+          borderWidth: 1,
+        });
+
+        // Add project name text (smaller font, no "PROJE:" prefix)
+        page.drawText(projectText, {
+          x: 15,
+          y: boxHeight - 5,
+          size: 9,
+          font: font,
+          color: rgb(0.1, 0.2, 0.6),
+        });
+
+        // Add description lines if available
+        if (descriptionLines.length > 0) {
+          descriptionLines.forEach((line, lineIndex) => {
+            page.drawText(line, {
+              x: 15,
+              y: boxHeight - 15 - (lineIndex * 10),
+              size: 7,
+              font: font,
+              color: rgb(0.3, 0.3, 0.3),
+            });
+          });
         }
 
         mergedPdf.addPage(page);

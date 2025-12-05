@@ -58,6 +58,12 @@ export interface Invoice {
   uploaded_by: string;
   created_at: string;
   updated_at: string;
+  // New fields
+  supplier_name?: string | null;          // Fatura firma adı
+  goods_services_total?: number | null;   // Mal ve hizmet toplam
+  vat_amount?: number | null;             // KDV
+  withholding_amount?: number | null;     // Tevkifat
+  payment_type?: string | null;           // Ödeme tipi
   // Relations
   company?: Company;
   project_links?: InvoiceProjectLink[];

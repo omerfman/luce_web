@@ -19,6 +19,23 @@ export function formatCurrency(amount: number, currency: string = 'TRY'): string
 }
 
 /**
+ * Format number with thousand separators (for input fields)
+ */
+export function formatNumberInput(value: string | number): string {
+  const num = typeof value === 'string' ? value.replace(/\D/g, '') : value.toString();
+  if (!num) return '';
+  return new Intl.NumberFormat('tr-TR').format(parseInt(num));
+}
+
+/**
+ * Parse formatted number input to number
+ */
+export function parseNumberInput(value: string): number {
+  const cleaned = value.replace(/\./g, '').replace(/,/g, '.');
+  return parseFloat(cleaned) || 0;
+}
+
+/**
  * Format date to Turkish locale
  */
 export function formatDate(date: string | Date, format: 'short' | 'long' = 'short'): string {
