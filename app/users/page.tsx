@@ -6,9 +6,11 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
 import { User, Role, Company, PermissionRecord } from '@/types';
+import { getUserStatus } from '@/lib/hooks/useUserPresence';
 
 export default function UsersPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, role } = useAuth();
+  const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -389,15 +391,42 @@ export default function UsersPage() {
                         {user.company?.name || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            user.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {user.is_active ? 'Aktif' : 'Pasif'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              user.is_active
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {user.is_active ? 'Aktif' : 'Pasif'}
+                          </span>
+                          {isSuperAdmin && user.last_seen_at && (
+                            <>
+                              {(() => {
+                                const status = getUserStatus(user.last_seen_at);
+                                return (
+                                  <span
+                                    className={`inline-flex h-2.5 w-2.5 rounded-full ${
+                                      status === 'online'
+                                        ? 'bg-green-500'
+                                        : status === 'away'
+                                        ? 'bg-yellow-500'
+                                        : 'bg-gray-400'
+                                    }`}
+                                    title={
+                                      status === 'online'
+                                        ? 'Çevrimiçi'
+                                        : status === 'away'
+                                        ? 'Uzakta'
+                                        : 'Çevrimdışı'
+                                    }
+                                  />
+                                );
+                              })()}
+                            </>
+                          )}
+                        </div>
                       </td>
                       {(hasPermission('users', 'update') || hasPermission('users', 'delete')) && (
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

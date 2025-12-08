@@ -12,9 +12,11 @@ interface SidebarProps {
 }
 
 export function Sidebar({ children }: SidebarProps) {
-  const { user, company, signOut, hasPermission } = useAuth();
+  const { user, company, role, signOut, hasPermission } = useAuth();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, resource: null, action: null },
@@ -23,6 +25,7 @@ export function Sidebar({ children }: SidebarProps) {
     { name: 'Kullanıcılar', href: '/users', icon: UsersIcon, resource: 'users', action: 'read' },
     { name: 'Roller', href: '/roles', icon: ShieldIcon, resource: 'roles', action: 'read' },
     { name: 'Raporlar', href: '/reports', icon: ChartIcon, resource: 'reports', action: 'read' },
+    ...(isSuperAdmin ? [{ name: 'Aktivite Logları', href: '/activity-logs', icon: ClockIcon, resource: null, action: null }] : []),
   ];
 
   // Filter navigation items based on permissions
@@ -200,6 +203,14 @@ function XIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }

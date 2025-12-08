@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { User, Role, Company, Permission, PermissionRecord } from '@/types';
+import { useUserPresence } from '@/lib/hooks/useUserPresence';
 
 interface AuthContextType {
   user: User | null;
@@ -25,6 +26,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Track user presence (login/logout/heartbeat)
+  useUserPresence(user?.id);
 
   useEffect(() => {
     // Get initial session
@@ -116,6 +120,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
+    // Log logout activity
+    if (user?.id) {
+      try {
+        await supabase.rpc('log_user_activity', {
+          user_uuid: user.id,
+          activity: 'logout',
+          ip: null,
+          agent: navigator.userAgent,
+          meta: { manual: true },
+        });
+        // Clear session storage
+        sessionStorage.removeItem(`user_session_${user.id}`);
+      } catch (error) {
+        console.error('Error logging logout:', error);
+      }
+    }
+    
     await supabase.auth.signOut();
     setUser(null);
     setRole(null);

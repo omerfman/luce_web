@@ -26,6 +26,7 @@ export interface User {
   meta: Record<string, any> | null;
   custom_permissions?: Permission[]; // User-specific permission overrides
   created_at: string;
+  last_seen_at?: string | null; // For presence tracking
   // Relations
   company?: Company;
   role?: Role;
