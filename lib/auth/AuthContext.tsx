@@ -120,26 +120,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    try {
-      // Log logout activity (don't block if this fails)
-      if (user?.id) {
-        supabase.rpc('log_user_activity', {
+    // Log logout activity (don't block if this fails)
+    if (user?.id) {
+      try {
+        await supabase.rpc('log_user_activity', {
           user_uuid: user.id,
           activity: 'logout',
           ip: null,
           agent: navigator.userAgent,
           meta: { manual: true },
-        }).catch(err => console.error('Error logging logout:', err));
+        });
         
         // Clear session storage
         sessionStorage.removeItem(`user_session_${user.id}`);
+      } catch (error) {
+        console.error('Error logging logout:', error);
       }
-    } catch (error) {
-      console.error('Error in logout process:', error);
     }
     
     // Always sign out regardless of logging errors
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+    
     setUser(null);
     setRole(null);
     setCompany(null);
