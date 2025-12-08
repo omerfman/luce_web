@@ -436,6 +436,8 @@ export default function InvoicesPage() {
         file_path: string;
         project_names: string[];
         description?: string;
+        company_name: string;
+        payments: Array<{payment_type: string, amount: number}>;
       }>();
 
       assignedInvoices.forEach(invoice => {
@@ -449,6 +451,8 @@ export default function InvoicesPage() {
             file_path: invoice.file_path,
             project_names: [],
             description: invoice.description || undefined,
+            company_name: company?.name || '',
+            payments: invoice.payments || [],
           });
         }
         

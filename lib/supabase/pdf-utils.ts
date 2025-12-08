@@ -8,6 +8,8 @@ interface ProjectInvoice {
   file_path: string;
   project_names: string; // Changed to single string with comma-separated names
   description?: string;
+  company_name: string;
+  payments?: Array<{payment_type: string, amount: number}>;
 }
 
 /**
@@ -69,8 +71,28 @@ export async function generateProjectInvoicesReport(
             .replace(/Ç/g, 'C');
         };
 
-        // Prepare project text
-        const projectText = sanitizeText(invoice.project_names);
+        // Prepare project text with company note format
+        const projectText = sanitizeText(`${invoice.company_name} notu: ${invoice.project_names}`);
+        
+        // Calculate payment status
+        const totalPaid = invoice.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+        const remaining = Number(invoice.amount) - totalPaid;
+        let paymentStatus = '';
+        let paymentDetails = '';
+        
+        if (totalPaid === 0) {
+          paymentStatus = 'Odeme Durumu: Odenmedi';
+        } else if (remaining <= 0.01) {
+          paymentStatus = 'Odeme Durumu: Odendi';
+          if (invoice.payments && invoice.payments.length > 0) {
+            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)}`).join(', ');
+          }
+        } else {
+          paymentStatus = `Odeme Durumu: Kismi (Odenen: ${totalPaid.toFixed(2)} TL, Kalan: ${remaining.toFixed(2)} TL)`;
+          if (invoice.payments && invoice.payments.length > 0) {
+            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)}`).join(', ');
+          }
+        }
         
         // Prepare description text and calculate height needed
         let descriptionLines: string[] = [];
@@ -106,6 +128,15 @@ export async function generateProjectInvoicesReport(
           }
           
           // Adjust box height based on number of lines
+          boxHeight = 25 + (descriptionLines.length * 10);
+        }
+        
+        // Add payment status and details to lines if on first page
+        if (i === 0 && paymentStatus) {
+          descriptionLines.push(paymentStatus);
+          if (paymentDetails) {
+            descriptionLines.push(paymentDetails);
+          }
           boxHeight = 25 + (descriptionLines.length * 10);
         }
 
