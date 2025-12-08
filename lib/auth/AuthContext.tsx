@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Try to sign out (ignore errors)
     try {
       await supabase.auth.signOut({ scope: 'local' });
-    } catch (error) {
+    } catch {
       // Ignore 403 errors, we'll manually clear everything
       console.log('SignOut API call failed, clearing session manually');
     }
