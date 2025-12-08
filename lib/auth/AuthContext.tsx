@@ -122,20 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     const userId = user?.id;
     
-    // Sign out from Supabase first (local scope only)
-    try {
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-    
-    // Clear local state
+    // Clear local state first
     setUser(null);
     setRole(null);
     setCompany(null);
     setPermissions([]);
     
-    // Log logout activity and clear session storage (after signout)
+    // Log logout activity
     if (userId) {
       try {
         await supabase.rpc('log_user_activity', {
@@ -152,7 +145,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.removeItem(`user_session_${userId}`);
     }
     
-    // Hard redirect to login page (bypasses middleware caching)
+    // Clear all local storage
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Try to sign out (ignore errors)
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error) {
+      // Ignore 403 errors, we'll manually clear everything
+      console.log('SignOut API call failed, clearing session manually');
+    }
+    
+    // Hard redirect to login page
     window.location.replace('/login');
   }
 
