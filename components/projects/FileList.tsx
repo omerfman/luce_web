@@ -51,7 +51,7 @@ export default function FileList({ files, onFileDeleted }: FileListProps) {
       if (onFileDeleted) {
         onFileDeleted(fileId);
       }
-    } catch (error) {
+    } catch {
       alert('Dosya silinirken bir hata oluştu');
     } finally {
       setDeletingId(null);

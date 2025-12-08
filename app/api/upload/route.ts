@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadToCloudinary, deleteFromCloudinary } from '@/lib/cloudinary/upload';
-import { supabase } from '@/lib/supabase/client';
 import { createClient } from '@supabase/supabase-js';
 
 // Server-side Supabase client

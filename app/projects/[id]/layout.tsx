@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import TechnicalOfficeSidebar from '@/components/projects/TechnicalOfficeSidebar';
 import { getProjectFileStats } from '@/lib/supabase/project-files';
-import { TechnicalCategory } from '@/types';
 
 export default function ProjectLayout({
   children,
