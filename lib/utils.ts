@@ -19,20 +19,45 @@ export function formatCurrency(amount: number, currency: string = 'TRY'): string
 }
 
 /**
- * Format number with thousand separators (for input fields)
+ * Format number with thousand separators and decimals (for input fields)
+ * Supports both integers and decimals with Turkish formatting (1.234,56)
  */
 export function formatNumberInput(value: string | number): string {
-  const num = typeof value === 'string' ? value.replace(/\D/g, '') : value.toString();
-  if (!num) return '';
-  return new Intl.NumberFormat('tr-TR').format(parseInt(num));
+  if (!value && value !== 0) return '';
+  
+  // Convert to string and normalize
+  let strValue = typeof value === 'number' ? value.toString() : value;
+  
+  // Remove all non-numeric characters except comma and dot
+  strValue = strValue.replace(/[^\d,.-]/g, '');
+  
+  // Replace comma with dot for parsing (TR format uses comma for decimals)
+  strValue = strValue.replace(',', '.');
+  
+  const num = parseFloat(strValue);
+  if (isNaN(num)) return '';
+  
+  // Format with Turkish locale (uses dot for thousands, comma for decimals)
+  return new Intl.NumberFormat('tr-TR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num);
 }
 
 /**
  * Parse formatted number input to number
+ * Handles Turkish format: 1.234.567,89 -> 1234567.89
  */
-export function parseNumberInput(value: string): number {
+export function parseNumberInput(value: string | number): number {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  
+  // Remove thousand separators (dots in TR format)
+  // Replace decimal separator (comma in TR format) with dot
   const cleaned = value.replace(/\./g, '').replace(/,/g, '.');
-  return parseFloat(cleaned) || 0;
+  const parsed = parseFloat(cleaned);
+  
+  return isNaN(parsed) ? 0 : parsed;
 }
 
 /**
