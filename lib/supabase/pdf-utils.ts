@@ -85,12 +85,12 @@ export async function generateProjectInvoicesReport(
         } else if (remaining <= 0.01) {
           paymentStatus = 'Odeme Durumu: Odendi';
           if (invoice.payments && invoice.payments.length > 0) {
-            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)}`).join(', ');
+            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)} (${Number(p.amount).toFixed(2)} TL)`).join(', ');
           }
         } else {
           paymentStatus = `Odeme Durumu: Kismi (Odenen: ${totalPaid.toFixed(2)} TL, Kalan: ${remaining.toFixed(2)} TL)`;
           if (invoice.payments && invoice.payments.length > 0) {
-            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)}`).join(', ');
+            paymentDetails = 'Odeme: ' + invoice.payments.map(p => `${sanitizeText(p.payment_type)} (${Number(p.amount).toFixed(2)} TL)`).join(', ');
           }
         }
         
