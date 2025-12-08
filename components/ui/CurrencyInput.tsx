@@ -21,7 +21,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
       const input = e.target.value;
       
       // Remove all non-digit and non-comma characters
-      let cleaned = input.replace(/[^\d,]/g, '');
+      const cleaned = input.replace(/[^\d,]/g, '');
       
       // Split by comma
       const parts = cleaned.split(',');

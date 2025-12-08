@@ -27,7 +27,7 @@ export function formatCurrencyInput(value: string): string {
   if (!value) return '';
   
   // Remove all non-digit and non-comma characters (including existing dots)
-  let cleaned = value.replace(/[^\d,]/g, '');
+  const cleaned = value.replace(/[^\d,]/g, '');
   
   // Split by comma to handle integer and decimal parts separately
   const parts = cleaned.split(',');
