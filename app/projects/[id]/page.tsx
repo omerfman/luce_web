@@ -1,244 +1,249 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { useAuth } from '@/lib/auth/AuthContext';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-// import { Button } from '@/components/ui/Button'; // Unused, reserved for future
-import { supabase } from '@/lib/supabase/client';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import { Project, Invoice } from '@/types';
+import { useParams, useRouter } from 'next/navigation';
+import { Project } from '@/types';
+import { getProject } from '@/lib/supabase/projects';
+import { getProjectFileStats } from '@/lib/supabase/project-files';
+import { TECHNICAL_CATEGORIES } from '@/types';
 
 export default function ProjectDetailPage() {
   const params = useParams();
-  const { company } = useAuth();
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [fileStats, setFileStats] = useState<{
+    totalFiles: number;
+    totalSize: number;
+    byCategory: Record<string, { count: number; size: number }>;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (params.id && company) {
-      loadProject();
-      loadProjectInvoices();
+    const loadProjectData = async () => {
+      try {
+        const projectData = await getProject(params.id as string);
+        if (!projectData) {
+          router.push('/projects');
+          return;
+        }
+        setProject(projectData);
+
+        const stats = await getProjectFileStats(params.id as string);
+        setFileStats(stats);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (params.id) {
+      loadProjectData();
     }
-  }, [params.id, company]);
+  }, [params.id, router]);
 
-  async function loadProject() {
-    try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', params.id as string)
-        .eq('company_id', company!.id)
-        .single();
-
-      if (error) throw error;
-      setProject(data);
-    } catch (error) {
-      console.error('Error loading project:', error);
-    }
-  }
-
-  async function loadProjectInvoices() {
-    try {
-      const { data, error } = await supabase
-        .from('invoice_project_links')
-        .select(`
-          *,
-          invoice:invoices(*)
-        `)
-        .eq('project_id', params.id as string);
-
-      if (error) throw error;
-      setInvoices((data || []).map((link: any) => link.invoice));
-    } catch (error) {
-      console.error('Error loading project invoices:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  const totalAmount = invoices.reduce((sum, inv) => sum + inv.amount, 0);
-  // const monthlyData = invoices.reduce((acc: Record<string, number>, inv) => {
-  //   const month = new Date(inv.invoice_date).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' });
-  //   acc[month] = (acc[month] || 0) + inv.amount;
-  //   return acc;
-  // }, {}); // Reserved for future charts
-
-  const top5Invoices = [...invoices]
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5);
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <Sidebar>
-        <div className="flex items-center justify-center py-12">
-          <div className="text-secondary-600">Yükleniyor...</div>
+      <div className="p-8">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-4"></div>
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3 mb-8"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="h-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            <div className="h-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            <div className="h-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+          </div>
         </div>
-      </Sidebar>
+      </div>
     );
   }
 
   if (!project) {
-    return (
-      <Sidebar>
-        <Card>
-          <div className="py-12 text-center text-sm text-secondary-500">
-            Proje bulunamadı
-          </div>
-        </Card>
-      </Sidebar>
-    );
+    return null;
   }
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'planning':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      case 'in_progress':
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+      case 'completed':
+        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      default:
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'planning':
+        return 'Planlama';
+      case 'in_progress':
+        return 'Devam Ediyor';
+      case 'completed':
+        return 'Tamamlandı';
+      default:
+        return status;
+    }
+  };
+
   return (
-    <Sidebar>
-      <div className="space-y-6">
-        {/* Project Header */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{project.name}</CardTitle>
-            {project.description && (
-              <CardDescription>{project.description}</CardDescription>
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <p className="text-sm font-medium text-secondary-600">Başlangıç</p>
-                <p className="text-lg font-semibold">
-                  {project.start_date ? formatDate(project.start_date) : '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-secondary-600">Bitiş</p>
-                <p className="text-lg font-semibold">
-                  {project.end_date ? formatDate(project.end_date) : '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-secondary-600">Durum</p>
-                <p className="text-lg font-semibold">{project.status}</p>
-              </div>
+    <div className="p-8 max-w-7xl mx-auto">
+      {/* Project Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            {project.name}
+          </h1>
+          <span
+            className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(
+              project.status
+            )}`}
+          >
+            {getStatusText(project.status)}
+          </span>
+        </div>
+        {project.description && (
+          <p className="text-gray-600 dark:text-gray-400 text-lg">
+            {project.description}
+          </p>
+        )}
+      </div>
+
+      {/* Info Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {/* Dates Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            📅 Tarihler
+          </h2>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Başlangıç Tarihi
+              </p>
+              <p className="text-gray-900 dark:text-white">
+                {project.start_date
+                  ? new Date(project.start_date).toLocaleDateString('tr-TR')
+                  : '-'}
+              </p>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Financial Summary */}
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Toplam Harcama</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold text-primary-600">
-                {formatCurrency(totalAmount)}
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Bitiş Tarihi
               </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Fatura Sayısı</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold text-secondary-900">{invoices.length}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Ortalama Fatura</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold text-secondary-900">
-                {invoices.length > 0
-                  ? formatCurrency(totalAmount / invoices.length)
-                  : formatCurrency(0)}
+              <p className="text-gray-900 dark:text-white">
+                {project.end_date
+                  ? new Date(project.end_date).toLocaleDateString('tr-TR')
+                  : '-'}
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
-        {/* Top 5 Invoices */}
-        <Card>
-          <CardHeader>
-            <CardTitle>En Büyük 5 Fatura</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {top5Invoices.length === 0 ? (
-              <p className="text-sm text-secondary-500">Henüz fatura bulunmuyor</p>
-            ) : (
-              <div className="space-y-2">
-                {top5Invoices.map((invoice) => (
-                  <div
-                    key={invoice.id}
-                    className="flex items-center justify-between rounded-lg border border-secondary-200 p-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-secondary-900">
-                        Fatura #{invoice.invoice_number}
-                      </p>
-                      <p className="text-xs text-secondary-500">{formatDate(invoice.invoice_date)}</p>
-                    </div>
-                    <p className="text-lg font-semibold text-primary-600">
-                      {formatCurrency(invoice.amount)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* File Statistics Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            📁 Dosya İstatistikleri
+          </h2>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Toplam Dosya
+              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {fileStats?.totalFiles || 0}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Toplam Boyut
+              </p>
+              <p className="text-gray-900 dark:text-white">
+                {fileStats?.totalSize
+                  ? `${(fileStats.totalSize / (1024 * 1024)).toFixed(2)} MB`
+                  : '0 MB'}
+              </p>
+            </div>
+          </div>
+        </div>
 
-        {/* All Invoices */}
-        <Card padding="none">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-secondary-900">Tüm Faturalar</h3>
+        {/* Quick Links Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            🔗 Hızlı Bağlantılar
+          </h2>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/projects/${project.id}/edit`)}
+              className="w-full text-left px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+            >
+              ✏️ Projeyi Düzenle
+            </button>
+            <button
+              onClick={() => router.push('/projects')}
+              className="w-full text-left px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+            >
+              📋 Tüm Projeler
+            </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-y border-secondary-200 bg-secondary-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">
-                    Tarih
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">
-                    Tedarikçi
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase text-secondary-600">
-                    Tutar
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-secondary-200">
-                {invoices.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-12 text-center text-sm text-secondary-500">
-                      Bu projeye henüz fatura atanmamış
-                    </td>
-                  </tr>
-                ) : (
-                  invoices.map((invoice) => (
-                    <tr key={invoice.id} className="hover:bg-secondary-50">
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-secondary-900">
-                        {formatDate(invoice.invoice_date)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-secondary-900">
-                        {invoice.invoice_number}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-secondary-900">
-                        {formatCurrency(invoice.amount)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        </div>
       </div>
-    </Sidebar>
+
+      {/* Category Distribution */}
+      {fileStats && fileStats.totalFiles > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            📊 Kategorilere Göre Dosya Dağılımı
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Object.entries(TECHNICAL_CATEGORIES).map(([key, label]) => {
+              const categoryStats = fileStats.byCategory[key];
+              if (!categoryStats || categoryStats.count === 0) return null;
+
+              return (
+                <div
+                  key={key}
+                  className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                  onClick={() => router.push(`/projects/${project.id}/${key}`)}
+                >
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    {label}
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {categoryStats.count}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {(categoryStats.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {fileStats && fileStats.totalFiles === 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            Henüz Dosya Yüklenmemiş
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Sol menüden bir kategori seçerek dosya yüklemeye başlayabilirsiniz.
+          </p>
+          <button
+            onClick={() =>
+              router.push(`/projects/${project.id}/${Object.keys(TECHNICAL_CATEGORIES)[0]}`)
+            }
+            className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            Dosya Yükle
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

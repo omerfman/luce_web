@@ -203,6 +203,54 @@ export interface CreateInvoiceFormData {
   notes?: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  category: TechnicalCategory;
+  file_name: string;
+  file_url: string;
+  file_type: string;
+  file_size: number;
+  cloudinary_public_id: string | null;
+  cloudinary_resource_type?: 'image' | 'video' | 'raw';
+  uploaded_by: string;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  user?: User;
+  project?: Project;
+}
+
+// ==================== ENUMS & CONSTANTS ====================
+
+export type TechnicalCategory = 
+  | 'statik'
+  | 'mimari'
+  | 'mekanik'
+  | 'elektrik'
+  | 'zemin_etudu'
+  | 'geoteknik'
+  | 'ic_tasarim'
+  | '3d';
+
+export const TECHNICAL_CATEGORIES: Record<TechnicalCategory, string> = {
+  statik: 'Statik',
+  mimari: 'Mimari',
+  mekanik: 'Mekanik',
+  elektrik: 'Elektrik',
+  zemin_etudu: 'Zemin Etüdü',
+  geoteknik: 'Geoteknik',
+  ic_tasarim: 'İç Tasarım',
+  '3d': '3 Boyut',
+};
+
+export interface FileUploadResponse {
+  success: boolean;
+  file?: ProjectFile;
+  error?: string;
+}
+
 // ==================== UI TYPES ====================
 
 export interface SidebarItem {
