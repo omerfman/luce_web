@@ -120,35 +120,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    // Log logout activity (don't block if this fails)
-    if (user?.id) {
-      try {
-        await supabase.rpc('log_user_activity', {
-          user_uuid: user.id,
-          activity: 'logout',
-          ip: null,
-          agent: navigator.userAgent,
-          meta: { manual: true },
-        });
-        
-        // Clear session storage
-        sessionStorage.removeItem(`user_session_${user.id}`);
-      } catch (error) {
-        console.error('Error logging logout:', error);
-      }
+    const userId = user?.id;
+    
+    // Sign out from Supabase first (local scope only)
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
     
-    // Clear local state first
+    // Clear local state
     setUser(null);
     setRole(null);
     setCompany(null);
     setPermissions([]);
     
-    // Sign out from Supabase (this clears cookies)
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
+    // Log logout activity and clear session storage (after signout)
+    if (userId) {
+      try {
+        await supabase.rpc('log_user_activity', {
+          user_uuid: userId,
+          activity: 'logout',
+          ip: null,
+          agent: navigator.userAgent,
+          meta: { manual: true },
+        });
+      } catch (error) {
+        console.error('Error logging logout:', error);
+      }
+      
+      sessionStorage.removeItem(`user_session_${userId}`);
     }
     
     // Hard redirect to login page (bypasses middleware caching)
