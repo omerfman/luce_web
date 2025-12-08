@@ -11,7 +11,7 @@ import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
 import { uploadInvoicePDF } from '@/lib/supabase/storage';
 import { generateProjectInvoicesReport, downloadPdfBlob } from '@/lib/supabase/pdf-utils';
-import { formatCurrency, formatDate, formatNumberInput, parseNumberInput } from '@/lib/utils';
+import { formatCurrency, formatDate, formatNumberInput, parseNumberInput, cleanNumberInput, formatCurrencyInput, parseCurrencyInput } from '@/lib/utils';
 import { Invoice, Project } from '@/types';
 
 type TabType = 'pending' | 'assigned' | 'all';
@@ -190,9 +190,9 @@ export default function InvoicesPage() {
         invoice_number: formData.invoice_number,
         description: formData.description || null,
         supplier_name: formData.supplier_name || null,
-        goods_services_total: formData.goods_services_total ? parseNumberInput(formData.goods_services_total) : null,
-        vat_amount: formData.vat_amount ? parseNumberInput(formData.vat_amount) : null,
-        withholding_amount: formData.withholding_amount ? parseNumberInput(formData.withholding_amount) : null,
+        goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
+        vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
+        withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
         payment_type: formData.payment_type || null,
       });
 
@@ -251,9 +251,9 @@ export default function InvoicesPage() {
           invoice_number: formData.invoice_number,
           description: formData.description,
           supplier_name: formData.supplier_name || null,
-          goods_services_total: formData.goods_services_total ? parseNumberInput(formData.goods_services_total) : null,
-          vat_amount: formData.vat_amount ? parseNumberInput(formData.vat_amount) : null,
-          withholding_amount: formData.withholding_amount ? parseNumberInput(formData.withholding_amount) : null,
+          goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
+          vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
+          withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
           payment_type: formData.payment_type || null,
         })
         .eq('id', selectedInvoice.id);
@@ -890,21 +890,24 @@ export default function InvoicesPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <Input
                 label="Mal/Hizmet Toplam (₺)"
+                type="text"
                 value={formData.goods_services_total}
-                onChange={(e) => setFormData({ ...formData, goods_services_total: formatNumberInput(e.target.value) })}
-                placeholder="1.000.000"
+                onChange={(e) => setFormData({ ...formData, goods_services_total: formatCurrencyInput(e.target.value) })}
+                placeholder="1.000.200,25"
               />
               <Input
                 label="KDV Tutarı (₺)"
+                type="text"
                 value={formData.vat_amount}
-                onChange={(e) => setFormData({ ...formData, vat_amount: formatNumberInput(e.target.value) })}
-                placeholder="180.000"
+                onChange={(e) => setFormData({ ...formData, vat_amount: formatCurrencyInput(e.target.value) })}
+                placeholder="180.000,50"
               />
               <Input
                 label="Tevkifat Tutarı (₺)"
+                type="text"
                 value={formData.withholding_amount}
-                onChange={(e) => setFormData({ ...formData, withholding_amount: formatNumberInput(e.target.value) })}
-                placeholder="50.000"
+                onChange={(e) => setFormData({ ...formData, withholding_amount: formatCurrencyInput(e.target.value) })}
+                placeholder="50.000,00"
               />
               <Input
                 label="Toplam Tutar (₺)"

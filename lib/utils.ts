@@ -19,7 +19,92 @@ export function formatCurrency(amount: number, currency: string = 'TRY'): string
 }
 
 /**
- * Format number with thousand separators and decimals (for input fields)
+ * Format currency input in real-time with Turkish formatting
+ * User types: 1000256,15 → Display: 1.000.256,15
+ * Adds thousand separators automatically while preserving cursor position
+ */
+export function formatCurrencyInput(value: string): string {
+  if (!value) return '';
+  
+  // Remove all non-digit and non-comma characters (including existing dots)
+  let cleaned = value.replace(/[^\d,]/g, '');
+  
+  // Split by comma to handle integer and decimal parts separately
+  const parts = cleaned.split(',');
+  
+  // Keep only first comma, join rest to integer part
+  const integerPart = parts[0];
+  const hasComma = parts.length > 1;
+  const decimalPart = hasComma ? parts.slice(1).join('') : '';
+  
+  // Format integer part with thousand separators (dots)
+  let formattedInteger = '';
+  if (integerPart) {
+    // Reverse, add dots every 3 digits, reverse back
+    const reversed = integerPart.split('').reverse().join('');
+    const grouped = reversed.match(/.{1,3}/g) || [];
+    formattedInteger = grouped.join('.').split('').reverse().join('');
+  }
+  
+  // Build final result
+  let result = formattedInteger;
+  
+  if (hasComma) {
+    // User typed comma, add it
+    result += ',';
+    // Add decimal part (max 2 digits)
+    if (decimalPart) {
+      result += decimalPart.substring(0, 2);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Parse formatted currency input to number
+ * Handles: 1.000.256,15 -> 1000256.15
+ */
+export function parseCurrencyInput(value: string): number {
+  if (!value) return 0;
+  
+  // Remove thousand separators (dots) and replace comma with dot
+  const cleaned = value.replace(/\./g, '').replace(',', '.');
+  const parsed = parseFloat(cleaned);
+  
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Clean and normalize number input while typing
+ * Allows user to type freely, only validates characters
+ */
+export function cleanNumberInput(value: string): string {
+  if (!value) return '';
+  
+  // Only allow digits, comma, and dot
+  let cleaned = value.replace(/[^\d,.]/g, '');
+  
+  // Allow only one decimal separator (comma or dot)
+  const commaCount = (cleaned.match(/,/g) || []).length;
+  const dotCount = (cleaned.match(/\./g) || []).length;
+  
+  // If user is typing decimals with comma
+  if (commaCount > 0) {
+    // Remove all dots (they're thousand separators to be cleaned)
+    cleaned = cleaned.replace(/\./g, '');
+    // Keep only the first comma
+    const parts = cleaned.split(',');
+    if (parts.length > 2) {
+      cleaned = parts[0] + ',' + parts.slice(1).join('');
+    }
+  }
+  
+  return cleaned;
+}
+
+/**
+ * Format number with thousand separators and decimals (for display/blur)
  * Supports both integers and decimals with Turkish formatting (1.234,56)
  */
 export function formatNumberInput(value: string | number): string {
@@ -29,10 +114,11 @@ export function formatNumberInput(value: string | number): string {
   let strValue = typeof value === 'number' ? value.toString() : value;
   
   // Remove all non-numeric characters except comma and dot
-  strValue = strValue.replace(/[^\d,.-]/g, '');
+  strValue = strValue.replace(/[^\d,.]/g, '');
   
-  // Replace comma with dot for parsing (TR format uses comma for decimals)
-  strValue = strValue.replace(',', '.');
+  // Handle Turkish format: replace comma with dot for parsing
+  // Remove existing dots (thousand separators)
+  strValue = strValue.replace(/\./g, '').replace(',', '.');
   
   const num = parseFloat(strValue);
   if (isNaN(num)) return '';
