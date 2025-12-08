@@ -138,20 +138,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     
-    // Always sign out regardless of logging errors
+    // Clear local state first
+    setUser(null);
+    setRole(null);
+    setCompany(null);
+    setPermissions([]);
+    
+    // Sign out from Supabase (this clears cookies)
     try {
       await supabase.auth.signOut();
     } catch (error) {
       console.error('Error signing out:', error);
     }
     
-    setUser(null);
-    setRole(null);
-    setCompany(null);
-    setPermissions([]);
-    
-    // Force redirect to login page
-    window.location.href = '/login';
+    // Hard redirect to login page (bypasses middleware caching)
+    window.location.replace('/login');
   }
 
   function hasPermission(
