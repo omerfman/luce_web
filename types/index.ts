@@ -63,10 +63,23 @@ export interface Invoice {
   goods_services_total?: number | null;   // Mal ve hizmet toplam
   vat_amount?: number | null;             // KDV
   withholding_amount?: number | null;     // Tevkifat
-  payment_type?: string | null;           // Ödeme tipi
   // Relations
   company?: Company;
   project_links?: InvoiceProjectLink[];
+  payments?: Payment[];
+}
+
+export interface Payment {
+  id: string;
+  invoice_id: string;
+  company_id: string;
+  payment_type: string;
+  amount: number;
+  payment_date: string;
+  description?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface InvoiceProjectLink {

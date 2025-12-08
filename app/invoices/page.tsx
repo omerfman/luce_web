@@ -12,7 +12,7 @@ import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
 import { uploadInvoicePDF } from '@/lib/supabase/storage';
 import { generateProjectInvoicesReport, downloadPdfBlob } from '@/lib/supabase/pdf-utils';
-import { formatCurrency, formatDate, formatNumberInput, parseNumberInput, cleanNumberInput, formatCurrencyInput, parseCurrencyInput } from '@/lib/utils';
+import { formatCurrency, formatDate, formatCurrencyInput, parseCurrencyInput } from '@/lib/utils';
 import { Invoice, Project } from '@/types';
 
 type TabType = 'pending' | 'assigned' | 'all';
@@ -25,6 +25,7 @@ export default function InvoicesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -32,13 +33,14 @@ export default function InvoicesPage() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [showFilters, setShowFilters] = useState(false);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string}>>([{type: '', amount: ''}]);
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
     supplierName: '',
     invoiceNumber: '',
     projectId: '',
-    paymentType: '',
   });
 
   const [formData, setFormData] = useState({
@@ -50,7 +52,6 @@ export default function InvoicesPage() {
     goods_services_total: '',
     vat_amount: '',
     withholding_amount: '',
-    payment_type: '',
   });
 
   const canCreate = hasPermission('invoices', 'create');
@@ -105,7 +106,8 @@ export default function InvoicesPage() {
           project_links:invoice_project_links(
             id,
             project:projects(id, name)
-          )
+          ),
+          payments(id, amount, payment_type, payment_date)
         `)
         .eq('company_id', company!.id)
         .order('invoice_date', { ascending: false });
@@ -178,6 +180,81 @@ export default function InvoicesPage() {
     }
   }
 
+  async function loadPayments(invoiceId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('invoice_id', invoiceId)
+        .order('payment_date', { ascending: false });
+
+      if (error) throw error;
+      setPayments(data || []);
+    } catch (error: any) {
+      console.error('Error loading payments:', error);
+    }
+  }
+
+  function openPaymentModal(invoice: Invoice) {
+    setSelectedInvoice(invoice);
+    setSelectedPaymentTypes([{type: '', amount: ''}]);
+    loadPayments(invoice.id);
+    setIsPaymentModalOpen(true);
+  }
+
+  function addPaymentType() {
+    setSelectedPaymentTypes([...selectedPaymentTypes, {type: '', amount: ''}]);
+  }
+
+  function removePaymentType(index: number) {
+    setSelectedPaymentTypes(selectedPaymentTypes.filter((_, i) => i !== index));
+  }
+
+  function updatePaymentType(index: number, field: 'type' | 'amount', value: string) {
+    const updated = [...selectedPaymentTypes];
+    updated[index][field] = value;
+    setSelectedPaymentTypes(updated);
+  }
+
+  async function handleAddPayments(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedInvoice || !company) return;
+
+    const validPayments = selectedPaymentTypes.filter(p => p.type && p.amount);
+    if (validPayments.length === 0) {
+      alert('Lütfen en az bir ödeme tipi ve tutar girin');
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const paymentsToInsert = validPayments.map(p => ({
+        invoice_id: selectedInvoice.id,
+        company_id: company.id,
+        payment_type: p.type,
+        amount: parseCurrencyInput(p.amount),
+        payment_date: new Date().toISOString().split('T')[0],
+        created_by: user!.id,
+      }));
+
+      const { error } = await supabase
+        .from('payments')
+        .insert(paymentsToInsert);
+
+      if (error) throw error;
+
+      setIsPaymentModalOpen(false);
+      loadPayments(selectedInvoice.id);
+      loadInvoices();
+    } catch (error: any) {
+      console.error('Error adding payments:', error);
+      alert(error.message || 'Ödeme eklenirken hata oluştu');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   function toggleProject(projectId: string) {
     if (selectedProjects.includes(projectId)) {
       setSelectedProjects(selectedProjects.filter(id => id !== projectId));
@@ -212,7 +289,6 @@ export default function InvoicesPage() {
         goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
         vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
         withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
-        payment_type: formData.payment_type || null,
       });
 
       if (error) throw error;
@@ -226,7 +302,6 @@ export default function InvoicesPage() {
         goods_services_total: '',
         vat_amount: '',
         withholding_amount: '',
-        payment_type: '',
       });
       setSelectedFile(null);
       setIsModalOpen(false);
@@ -250,7 +325,6 @@ export default function InvoicesPage() {
       goods_services_total: invoice.goods_services_total ? invoice.goods_services_total.toString().replace('.', ',') : '',
       vat_amount: invoice.vat_amount ? invoice.vat_amount.toString().replace('.', ',') : '',
       withholding_amount: invoice.withholding_amount ? invoice.withholding_amount.toString().replace('.', ',') : '',
-      payment_type: invoice.payment_type || '',
     });
     setIsEditModalOpen(true);
   }
@@ -273,7 +347,6 @@ export default function InvoicesPage() {
           goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
           vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
           withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
-          payment_type: formData.payment_type || null,
         })
         .eq('id', selectedInvoice.id);
 
@@ -288,7 +361,6 @@ export default function InvoicesPage() {
         goods_services_total: '',
         vat_amount: '',
         withholding_amount: '',
-        payment_type: '',
       });
       setSelectedInvoice(null);
       setIsEditModalOpen(false);
@@ -414,7 +486,6 @@ export default function InvoicesPage() {
     if (filters.endDate && invoice.invoice_date > filters.endDate) return false;
     if (filters.supplierName && !invoice.supplier_name?.toLowerCase().includes(filters.supplierName.toLowerCase())) return false;
     if (filters.invoiceNumber && !invoice.invoice_number.toLowerCase().includes(filters.invoiceNumber.toLowerCase())) return false;
-    if (filters.paymentType && invoice.payment_type !== filters.paymentType) return false;
     
     // Project filter
     if (filters.projectId) {
@@ -432,7 +503,6 @@ export default function InvoicesPage() {
       supplierName: '',
       invoiceNumber: '',
       projectId: '',
-      paymentType: '',
     });
   }
 
@@ -556,26 +626,6 @@ export default function InvoicesPage() {
                     ))}
                   </select>
                 </div>
-
-                {/* Payment Type */}
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    Ödeme Tipi
-                  </label>
-                  <select
-                    value={filters.paymentType}
-                    onChange={(e) => setFilters({ ...filters, paymentType: e.target.value })}
-                    className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="">Tüm Ödeme Tipleri</option>
-                    <option value="Nakit">Nakit</option>
-                    <option value="Kredi Kartı">Kredi Kartı</option>
-                    <option value="Banka Transferi">Banka Transferi</option>
-                    <option value="Çek">Çek</option>
-                    <option value="Senet">Senet</option>
-                    <option value="Diğer">Diğer</option>
-                  </select>
-                </div>
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-secondary-200">
@@ -643,7 +693,7 @@ export default function InvoicesPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">Firma</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">Açıklama</th>
                   <th className="px-6 py-3 text-right text-xs font-medium uppercase text-secondary-600">Tutar</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">Ödeme</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">Ödeme Durumu</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase text-secondary-600">Projeler</th>
                   <th className="px-6 py-3 text-center text-xs font-medium uppercase text-secondary-600">İşlemler</th>
                 </tr>
@@ -676,13 +726,35 @@ export default function InvoicesPage() {
                         {formatCurrency(invoice.amount)}
                       </td>
                       <td className="px-6 py-4 text-sm text-secondary-600">
-                        {invoice.payment_type ? (
-                          <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                            {invoice.payment_type}
-                          </span>
-                        ) : (
-                          '-'
-                        )}
+                        {(() => {
+                          const totalPaid = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
+                          const remaining = Number(invoice.amount) - totalPaid;
+                          
+                          if (totalPaid === 0) {
+                            return (
+                              <span className="inline-flex rounded-full bg-yellow-50 px-2 py-0.5 text-xs text-yellow-700">
+                                Ödenmedi
+                              </span>
+                            );
+                          } else if (remaining <= 0.01) {
+                            return (
+                              <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
+                                Ödendi
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <div className="space-y-1">
+                                <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                                  Kısmi: {formatCurrency(totalPaid)}
+                                </span>
+                                <div className="text-xs text-secondary-500">
+                                  Kalan: {formatCurrency(remaining)}
+                                </div>
+                              </div>
+                            );
+                          }
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         {invoice.project_links && invoice.project_links.length > 0 ? (
@@ -701,6 +773,14 @@ export default function InvoicesPage() {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-center text-sm space-x-3">
+                        {canUpdate && (
+                          <button
+                            onClick={() => openPaymentModal(invoice)}
+                            className="text-green-600 hover:text-green-700"
+                          >
+                            Ödeme
+                          </button>
+                        )}
                         <button
                           onClick={async () => {
                             const url = await getSignedUrl(invoice.file_path);
@@ -817,31 +897,6 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          {/* Ödeme Bilgileri */}
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-secondary-700 mb-3">Ödeme Bilgileri</h3>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-secondary-700 mb-1">
-                  Ödeme Tipi
-                </label>
-                <select
-                  value={formData.payment_type}
-                  onChange={(e) => setFormData({ ...formData, payment_type: e.target.value })}
-                  className="input"
-                >
-                  <option value="">Seçiniz</option>
-                  <option value="Nakit">Nakit</option>
-                  <option value="Kredi Kartı">Kredi Kartı</option>
-                  <option value="Banka Transferi">Banka Transferi</option>
-                  <option value="Çek">Çek</option>
-                  <option value="Senet">Senet</option>
-                  <option value="Havale/EFT">Havale/EFT</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
           {/* Açıklama */}
           <div className="border-t pt-4">
             <Input
@@ -927,29 +982,6 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          {/* Ödeme Bilgileri */}
-          <div>
-            <h3 className="text-sm font-semibold text-secondary-900 mb-3">Ödeme Bilgileri</h3>
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 mb-1">
-                Ödeme Tipi
-              </label>
-              <select
-                value={formData.payment_type}
-                onChange={(e) => setFormData({ ...formData, payment_type: e.target.value })}
-                className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="">Seçiniz</option>
-                <option value="Nakit">Nakit</option>
-                <option value="Kredi Kartı">Kredi Kartı</option>
-                <option value="Banka Transferi">Banka Transferi</option>
-                <option value="Çek">Çek</option>
-                <option value="Senet">Senet</option>
-                <option value="Diğer">Diğer</option>
-              </select>
-            </div>
-          </div>
-
           {/* Açıklama */}
           <div>
             <h3 className="text-sm font-semibold text-secondary-900 mb-3">Açıklama</h3>
@@ -1003,6 +1035,133 @@ export default function InvoicesPage() {
             </Button>
           </ModalFooter>
         </div>
+      </Modal>
+
+      {/* Payment Modal */}
+      <Modal 
+        isOpen={isPaymentModalOpen} 
+        onClose={() => setIsPaymentModalOpen(false)} 
+        title="Ödeme Ekle"
+        size="lg"
+      >
+        <form onSubmit={handleAddPayments} className="space-y-4">
+          <div className="rounded-lg bg-secondary-50 p-3">
+            <p className="text-sm text-secondary-700">
+              <span className="font-medium">Fatura:</span> {selectedInvoice?.invoice_number}
+            </p>
+            <p className="text-sm text-secondary-700">
+              <span className="font-medium">Toplam Tutar:</span> {selectedInvoice && formatCurrency(selectedInvoice.amount)}
+            </p>
+          </div>
+
+          {/* Existing Payments */}
+          {payments.length > 0 && (
+            <div className="rounded-lg border border-secondary-200 p-4">
+              <h3 className="text-sm font-semibold text-secondary-900 mb-3">Mevcut Ödemeler</h3>
+              <div className="space-y-2">
+                {payments.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between rounded-lg bg-secondary-50 px-3 py-2">
+                    <div>
+                      <span className="text-sm font-medium text-secondary-900">{payment.payment_type}</span>
+                      <span className="ml-2 text-xs text-secondary-500">
+                        {formatDate(payment.payment_date)}
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold text-secondary-900">
+                      {formatCurrency(payment.amount)}
+                    </span>
+                  </div>
+                ))}
+                <div className="border-t border-secondary-300 pt-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-secondary-700">Toplam Ödenen:</span>
+                    <span className="text-sm font-semibold text-green-600">
+                      {formatCurrency(payments.reduce((sum, p) => sum + Number(p.amount), 0))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-sm font-medium text-secondary-700">Kalan:</span>
+                    <span className="text-sm font-semibold text-red-600">
+                      {selectedInvoice && formatCurrency(
+                        Number(selectedInvoice.amount) - payments.reduce((sum, p) => sum + Number(p.amount), 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* New Payments */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-secondary-900">Yeni Ödeme Ekle</h3>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                onClick={addPaymentType}
+                className="text-xs"
+              >
+                + Ödeme Tipi Ekle
+              </Button>
+            </div>
+
+            {selectedPaymentTypes.map((payment, index) => (
+              <div key={index} className="flex gap-3 items-start">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">
+                    Ödeme Tipi
+                  </label>
+                  <select
+                    value={payment.type}
+                    onChange={(e) => updatePaymentType(index, 'type', e.target.value)}
+                    className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  >
+                    <option value="">Seçiniz</option>
+                    <option value="Nakit">Nakit</option>
+                    <option value="Kredi Kartı">Kredi Kartı</option>
+                    <option value="Banka Transferi">Banka Transferi</option>
+                    <option value="Çek">Çek</option>
+                    <option value="Senet">Senet</option>
+                    <option value="Havale/EFT">Havale/EFT</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">
+                    Tutar (₺)
+                  </label>
+                  <CurrencyInput
+                    value={payment.amount}
+                    onChange={(value) => updatePaymentType(index, 'amount', value)}
+                    required
+                    placeholder="0,00"
+                  />
+                </div>
+                {selectedPaymentTypes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removePaymentType(index)}
+                    className="mt-7 text-red-600 hover:text-red-700"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <ModalFooter>
+            <Button type="button" variant="ghost" onClick={() => setIsPaymentModalOpen(false)}>
+              İptal
+            </Button>
+            <Button type="submit" isLoading={isUploading}>
+              Ödeme Ekle
+            </Button>
+          </ModalFooter>
+        </form>
       </Modal>
     </Sidebar>
   );
