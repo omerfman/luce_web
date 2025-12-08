@@ -255,6 +255,27 @@ export default function InvoicesPage() {
     }
   }
 
+  async function handleDeletePayment(paymentId: string) {
+    if (!confirm('Bu ödemeyi silmek istediğinize emin misiniz?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('payments')
+        .delete()
+        .eq('id', paymentId);
+
+      if (error) throw error;
+
+      if (selectedInvoice) {
+        loadPayments(selectedInvoice.id);
+        loadInvoices();
+      }
+    } catch (error: any) {
+      console.error('Error deleting payment:', error);
+      alert(error.message || 'Ödeme silinirken hata oluştu');
+    }
+  }
+
   function toggleProject(projectId: string) {
     if (selectedProjects.includes(projectId)) {
       setSelectedProjects(selectedProjects.filter(id => id !== projectId));
@@ -1067,9 +1088,23 @@ export default function InvoicesPage() {
                         {formatDate(payment.payment_date)}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold text-secondary-900">
-                      {formatCurrency(payment.amount)}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-secondary-900">
+                        {formatCurrency(payment.amount)}
+                      </span>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePayment(payment.id)}
+                          className="text-red-600 hover:text-red-700"
+                          title="Ödemeyi Sil"
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
                 <div className="border-t border-secondary-300 pt-2 mt-2">
@@ -1119,12 +1154,13 @@ export default function InvoicesPage() {
                     required
                   >
                     <option value="">Seçiniz</option>
-                    <option value="Nakit">Nakit</option>
+                    <option value="Kasadan Nakit">Kasadan Nakit</option>
                     <option value="Kredi Kartı">Kredi Kartı</option>
                     <option value="Banka Transferi">Banka Transferi</option>
                     <option value="Çek">Çek</option>
                     <option value="Senet">Senet</option>
                     <option value="Havale/EFT">Havale/EFT</option>
+                    <option value="Cari">Cari</option>
                   </select>
                 </div>
                 <div className="flex-1">
