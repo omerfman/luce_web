@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
 import { uploadInvoicePDF } from '@/lib/supabase/storage';
@@ -228,9 +229,9 @@ export default function InvoicesPage() {
       invoice_number: invoice.invoice_number,
       description: invoice.description || '',
       supplier_name: invoice.supplier_name || '',
-      goods_services_total: invoice.goods_services_total ? formatNumberInput(invoice.goods_services_total.toString()) : '',
-      vat_amount: invoice.vat_amount ? formatNumberInput(invoice.vat_amount.toString()) : '',
-      withholding_amount: invoice.withholding_amount ? formatNumberInput(invoice.withholding_amount.toString()) : '',
+      goods_services_total: invoice.goods_services_total ? invoice.goods_services_total.toString().replace('.', ',') : '',
+      vat_amount: invoice.vat_amount ? invoice.vat_amount.toString().replace('.', ',') : '',
+      withholding_amount: invoice.withholding_amount ? invoice.withholding_amount.toString().replace('.', ',') : '',
       payment_type: invoice.payment_type || '',
     });
     setIsEditModalOpen(true);
@@ -888,25 +889,22 @@ export default function InvoicesPage() {
           <div>
             <h3 className="text-sm font-semibold text-secondary-900 mb-3">Tutar Bilgileri</h3>
             <div className="grid gap-4 md:grid-cols-2">
-              <Input
+              <CurrencyInput
                 label="Mal/Hizmet Toplam (₺)"
-                type="text"
                 value={formData.goods_services_total}
-                onChange={(e) => setFormData({ ...formData, goods_services_total: formatCurrencyInput(e.target.value) })}
+                onChange={(value) => setFormData({ ...formData, goods_services_total: value })}
                 placeholder="1.000.200,25"
               />
-              <Input
+              <CurrencyInput
                 label="KDV Tutarı (₺)"
-                type="text"
                 value={formData.vat_amount}
-                onChange={(e) => setFormData({ ...formData, vat_amount: formatCurrencyInput(e.target.value) })}
+                onChange={(value) => setFormData({ ...formData, vat_amount: value })}
                 placeholder="180.000,50"
               />
-              <Input
+              <CurrencyInput
                 label="Tevkifat Tutarı (₺)"
-                type="text"
                 value={formData.withholding_amount}
-                onChange={(e) => setFormData({ ...formData, withholding_amount: formatCurrencyInput(e.target.value) })}
+                onChange={(value) => setFormData({ ...formData, withholding_amount: value })}
                 placeholder="50.000,00"
               />
               <Input
