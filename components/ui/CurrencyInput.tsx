@@ -20,12 +20,8 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const input = e.target.value;
       
-      console.log('Input value:', input);
-      
       // Remove all non-digit and non-comma characters
       let cleaned = input.replace(/[^\d,]/g, '');
-      
-      console.log('Cleaned:', cleaned);
       
       // Split by comma
       const parts = cleaned.split(',');
@@ -34,8 +30,6 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
       const integerPart = parts[0] || '';
       const hasComma = parts.length > 1;
       const decimalPart = hasComma ? parts.slice(1).join('').substring(0, 2) : '';
-      
-      console.log('Parts:', { integerPart, hasComma, decimalPart });
       
       // Format integer part with dots every 3 digits
       let formatted = '';
@@ -53,8 +47,6 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
           result += decimalPart;
         }
       }
-      
-      console.log('Result:', result);
       
       if (onChange) {
         onChange(result);

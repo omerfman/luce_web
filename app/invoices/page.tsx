@@ -186,7 +186,7 @@ export default function InvoicesPage() {
         file_path: uploadResult.url!,
         file_name: selectedFile.name,
         file_size: selectedFile.size,
-        amount: parseNumberInput(formData.amount),
+        amount: parseCurrencyInput(formData.amount),
         invoice_date: formData.invoice_date,
         invoice_number: formData.invoice_number,
         description: formData.description || null,
@@ -247,7 +247,7 @@ export default function InvoicesPage() {
       const { error } = await supabase
         .from('invoices')
         .update({
-          amount: parseFloat(formData.amount),
+          amount: parseCurrencyInput(formData.amount),
           invoice_date: formData.invoice_date,
           invoice_number: formData.invoice_number,
           description: formData.description,
@@ -767,44 +767,32 @@ export default function InvoicesPage() {
           <div className="border-t pt-4">
             <h3 className="text-sm font-medium text-secondary-700 mb-3">Tutar Bilgileri</h3>
             <div className="grid gap-4 md:grid-cols-2">
-              <Input
+              <CurrencyInput
                 label="Mal ve Hizmet Toplamı (₺)"
                 value={formData.goods_services_total}
-                onChange={(e) => {
-                  const formatted = formatNumberInput(e.target.value);
-                  setFormData({ ...formData, goods_services_total: formatted });
-                }}
-                placeholder="1.000.000"
+                onChange={(value) => setFormData({ ...formData, goods_services_total: value })}
+                placeholder="1.000.200,25"
               />
-              <Input
+              <CurrencyInput
                 label="KDV (₺)"
                 value={formData.vat_amount}
-                onChange={(e) => {
-                  const formatted = formatNumberInput(e.target.value);
-                  setFormData({ ...formData, vat_amount: formatted });
-                }}
-                placeholder="180.000"
+                onChange={(value) => setFormData({ ...formData, vat_amount: value })}
+                placeholder="180.000,50"
               />
             </div>
             <div className="grid gap-4 md:grid-cols-2 mt-4">
-              <Input
+              <CurrencyInput
                 label="Tevkifat (₺)"
                 value={formData.withholding_amount}
-                onChange={(e) => {
-                  const formatted = formatNumberInput(e.target.value);
-                  setFormData({ ...formData, withholding_amount: formatted });
-                }}
-                placeholder="50.000"
+                onChange={(value) => setFormData({ ...formData, withholding_amount: value })}
+                placeholder="50.000,00"
               />
-              <Input
+              <CurrencyInput
                 label="Toplam Tutar (₺)"
                 value={formData.amount}
-                onChange={(e) => {
-                  const formatted = formatNumberInput(e.target.value);
-                  setFormData({ ...formData, amount: formatted });
-                }}
+                onChange={(value) => setFormData({ ...formData, amount: value })}
                 required
-                placeholder="1.130.000"
+                placeholder="1.130.200,75"
               />
             </div>
           </div>
