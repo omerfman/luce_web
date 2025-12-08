@@ -58,6 +58,24 @@ export default function InvoicesPage() {
   const canDelete = hasPermission('invoices', 'delete');
   const canAssign = hasPermission('invoices', 'assign') || hasPermission('*', '*');
 
+  // Auto-calculate total amount when currency fields change
+  useEffect(() => {
+    const goods = parseCurrencyInput(formData.goods_services_total);
+    const vat = parseCurrencyInput(formData.vat_amount);
+    const withholding = parseCurrencyInput(formData.withholding_amount);
+    
+    // Formula: (Mal/Hizmet + KDV) - Tevkifat
+    const total = goods + vat - withholding;
+    
+    // Only update if there's a calculated value and it's different from current
+    if (total > 0) {
+      const formattedTotal = formatCurrencyInput(total.toString().replace('.', ','));
+      if (formattedTotal !== formData.amount) {
+        setFormData(prev => ({ ...prev, amount: formattedTotal }));
+      }
+    }
+  }, [formData.goods_services_total, formData.vat_amount, formData.withholding_amount]);
+
   async function getSignedUrl(path: string): Promise<string> {
     const { data, error } = await supabase.storage
       .from('invoices')
@@ -792,7 +810,9 @@ export default function InvoicesPage() {
                 value={formData.amount}
                 onChange={(value) => setFormData({ ...formData, amount: value })}
                 required
-                placeholder="1.130.200,75"
+                placeholder="Otomatik hesaplanır"
+                readOnly
+                className="bg-secondary-50"
               />
             </div>
           </div>
@@ -895,13 +915,14 @@ export default function InvoicesPage() {
                 onChange={(value) => setFormData({ ...formData, withholding_amount: value })}
                 placeholder="50.000,00"
               />
-              <Input
+              <CurrencyInput
                 label="Toplam Tutar (₺)"
-                type="number"
-                step="0.01"
                 value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                onChange={(value) => setFormData({ ...formData, amount: value })}
                 required
+                placeholder="Otomatik hesaplanır"
+                readOnly
+                className="bg-secondary-50"
               />
             </div>
           </div>
