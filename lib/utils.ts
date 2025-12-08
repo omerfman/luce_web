@@ -87,7 +87,6 @@ export function cleanNumberInput(value: string): string {
   
   // Allow only one decimal separator (comma or dot)
   const commaCount = (cleaned.match(/,/g) || []).length;
-  const dotCount = (cleaned.match(/\./g) || []).length;
   
   // If user is typing decimals with comma
   if (commaCount > 0) {

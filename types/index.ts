@@ -124,7 +124,7 @@ export enum UserRole {
 
 // ==================== PERMISSION TYPES ====================
 
-export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | '*';
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'assign' | 'export' | '*';
 export type PermissionResource =
   | 'invoices'
   | 'projects'
