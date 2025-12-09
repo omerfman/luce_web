@@ -18,7 +18,7 @@ cloudinary.config({
 });
 
 // Allowed file types
-const ALLOWED_FILE_TYPES = {
+const ALLOWED_FILE_TYPES: Record<string, string> = {
   // Documents
   'application/pdf': '.pdf',
   'application/msword': '.doc',
