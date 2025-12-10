@@ -46,6 +46,41 @@ export interface Project {
   company?: Company;
 }
 
+export interface Subcontractor {
+  id: string;
+  company_id: string;
+  name: string;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  tax_number?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InformalPayment {
+  id: string;
+  project_id?: string | null;
+  subcontractor_id: string;
+  amount: number;
+  description: string;
+  payment_date: string;
+  payment_method?: string | null;
+  receipt_number?: string | null;
+  notes?: string | null;
+  created_by: string;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+  // Relations
+  subcontractor?: Subcontractor;
+  project?: Project;
+  user?: User;
+}
+
 export interface Invoice {
   id: string;
   company_id: string;
