@@ -108,7 +108,7 @@ async function scanPageForQR(page: any): Promise<string | null> {
           console.log('Canvas preview (first 100 chars):', dataUrl.substring(0, 100));
           console.log('Full canvas size:', canvas.width, 'x', canvas.height);
           // You can paste this in browser console: document.body.innerHTML = '<img src="' + dataUrl + '">'
-        } catch (e) {
+        } catch {
           console.log('Could not create debug image');
         }
       }
