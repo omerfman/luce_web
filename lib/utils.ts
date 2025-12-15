@@ -19,6 +19,25 @@ export function formatCurrency(amount: number, currency: string = 'TRY'): string
 }
 
 /**
+ * Convert number to Turkish currency input format
+ * 15090.4 → "15.090,40"
+ * 3018.08 → "3.018,08"
+ */
+export function numberToTurkishCurrency(amount: number): string {
+  // Convert to fixed 2 decimals
+  const fixed = amount.toFixed(2);
+  
+  // Split by decimal point
+  const [intPart, decPart] = fixed.split('.');
+  
+  // Format integer part with dots (thousand separator)
+  const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  
+  // Return with Turkish comma separator
+  return `${formattedInt},${decPart}`;
+}
+
+/**
  * Format currency input in real-time with Turkish formatting
  * User types: 1000256,15 → Display: 1.000.256,15
  * Adds thousand separators automatically while preserving cursor position

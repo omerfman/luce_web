@@ -12,8 +12,9 @@ import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
 import { uploadInvoicePDF } from '@/lib/supabase/storage';
 import { generateProjectInvoicesReport, downloadPdfBlob } from '@/lib/supabase/pdf-utils';
-import { formatCurrency, formatDate, formatCurrencyInput, parseCurrencyInput } from '@/lib/utils';
-import { Invoice, Project } from '@/types';
+import { formatCurrency, formatDate, formatCurrencyInput, parseCurrencyInput, numberToTurkishCurrency } from '@/lib/utils';
+import { Invoice, Project, InvoiceQRData } from '@/types';
+import { getOrCreateSupplier } from '@/lib/supabase/suppliers';
 
 type TabType = 'pending' | 'assigned' | 'all';
 
@@ -29,6 +30,7 @@ export default function InvoicesPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [qrMetadata, setQRMetadata] = useState<InvoiceQRData | null>(null); // QR'dan gelen tüm data
   const [isUploading, setIsUploading] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
@@ -284,6 +286,88 @@ export default function InvoicesPage() {
     }
   }
 
+  function handleQRDataExtracted(qrData: InvoiceQRData) {
+    console.log('QR data extracted:', qrData);
+    
+    // Save full QR data for later use in metadata
+    setQRMetadata(qrData);
+    
+    // Map QR data to form data
+    const updates: any = {};
+    
+    if (qrData.invoiceNumber) {
+      updates.invoice_number = qrData.invoiceNumber;
+    }
+    
+    if (qrData.invoiceDate) {
+      updates.invoice_date = qrData.invoiceDate;
+    }
+    
+    if (qrData.supplierName) {
+      updates.supplier_name = qrData.supplierName;
+    }
+    
+    if (qrData.goodsServicesTotal !== undefined) {
+      // Convert number to Turkish format: 15090.4 → "15.090,40"
+      updates.goods_services_total = numberToTurkishCurrency(qrData.goodsServicesTotal);
+      console.log('Goods/Services:', qrData.goodsServicesTotal, '→', updates.goods_services_total);
+    }
+    
+    if (qrData.vatAmount !== undefined) {
+      // Convert number to Turkish format: 3018.08 → "3.018,08"
+      updates.vat_amount = numberToTurkishCurrency(qrData.vatAmount);
+      console.log('VAT Amount:', qrData.vatAmount, '→', updates.vat_amount);
+    }
+    
+    if (qrData.withholdingAmount !== undefined) {
+      updates.withholding_amount = numberToTurkishCurrency(qrData.withholdingAmount);
+      console.log('Withholding:', qrData.withholdingAmount, '→', updates.withholding_amount);
+    }
+    
+    // If we have total amount but not the breakdown, use it
+    if (qrData.totalAmount !== undefined && !qrData.goodsServicesTotal) {
+      updates.amount = numberToTurkishCurrency(qrData.totalAmount);
+      console.log('Total Amount:', qrData.totalAmount, '→', updates.amount);
+    }
+    
+    // Auto-fill supplier name from VKN if available
+    if (qrData.taxNumber && !qrData.supplierName && company) {
+      console.log('VKN found, looking up supplier:', qrData.taxNumber);
+      
+      // Async lookup - don't block the form update
+      getOrCreateSupplier(qrData.taxNumber, 'Bilinmeyen Tedarikçi', company.id)
+        .then(supplier => {
+          if (supplier && supplier.name && supplier.name !== 'Bilinmeyen Tedarikçi') {
+            console.log('Supplier found from cache:', supplier.name);
+            setFormData(prev => ({
+              ...prev,
+              supplier_name: supplier.name
+            }));
+          } else if (supplier) {
+            console.log('Supplier VKN cached, but name unknown - manual entry required');
+            // Store supplier ID for later update
+            setFormData(prev => ({
+              ...prev,
+              supplier_name: '' // Leave empty for manual entry
+            }));
+          }
+        })
+        .catch(err => {
+          console.error('Error looking up supplier:', err);
+        });
+    }
+    
+    // Update form data
+    setFormData(prev => ({ ...prev, ...updates }));
+    
+    // Show success notification (using browser alert for now)
+    const fieldsFound = Object.keys(updates).length;
+    if (fieldsFound > 0) {
+      console.log(`✅ QR kod başarıyla okundu! ${fieldsFound} alan dolduruldu.`);
+      // Could add a toast notification here
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedFile || !company) return;
@@ -291,6 +375,25 @@ export default function InvoicesPage() {
     setIsUploading(true);
 
     try {
+      // Check for duplicate invoice number first
+      const { data: existingInvoice, error: checkError } = await supabase
+        .from('invoices')
+        .select('id, invoice_number')
+        .eq('company_id', company.id)
+        .eq('invoice_number', formData.invoice_number)
+        .maybeSingle(); // Use maybeSingle instead of single to avoid error if not found
+
+      if (checkError) {
+        console.error('Error checking for duplicate invoice:', checkError);
+        // Continue anyway - let the insert fail with proper error if it's really duplicate
+      }
+
+      if (existingInvoice) {
+        alert(`⚠️ Bu fatura numarası (${formData.invoice_number}) zaten kayıtlı! Lütfen farklı bir numara girin veya mevcut faturayı güncelleyin.`);
+        setIsUploading(false);
+        return;
+      }
+
       const uploadResult = await uploadInvoicePDF(selectedFile, company.id);
       if (!uploadResult.success) {
         throw new Error(uploadResult.error);
@@ -310,9 +413,35 @@ export default function InvoicesPage() {
         goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
         vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
         withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
+        // QR metadata (eğer QR okuduysa)
+        supplier_vkn: qrMetadata?.taxNumber || null,
+        buyer_vkn: qrMetadata?.buyerVKN || null,
+        invoice_scenario: qrMetadata?.scenario || null,
+        invoice_type: qrMetadata?.type || null,
+        invoice_ettn: qrMetadata?.etag || null,
+        currency: qrMetadata?.currency || 'TRY',
       });
 
       if (error) throw error;
+
+      // Update supplier name in cache if we have VKN and a real name
+      if (qrMetadata?.taxNumber && formData.supplier_name && formData.supplier_name !== 'Bilinmeyen Tedarikçi') {
+        console.log('Updating supplier cache with name:', formData.supplier_name);
+        
+        // Update supplier name in cache (async, don't wait)
+        supabase
+          .from('suppliers')
+          .update({ name: formData.supplier_name })
+          .eq('company_id', company.id)
+          .eq('vkn', qrMetadata.taxNumber)
+          .then(({ error: updateError }) => {
+            if (updateError) {
+              console.error('Error updating supplier name:', updateError);
+            } else {
+              console.log('✅ Supplier name updated in cache');
+            }
+          });
+      }
 
       setFormData({
         amount: '',
@@ -325,11 +454,18 @@ export default function InvoicesPage() {
         withholding_amount: '',
       });
       setSelectedFile(null);
+      setQRMetadata(null); // QR metadata'yı temizle
       setIsModalOpen(false);
       loadInvoices();
     } catch (error: any) {
       console.error('Error creating invoice:', error);
-      alert(error.message || 'Fatura oluşturulurken hata oluştu');
+      
+      // Better error messages
+      if (error.code === '23505') {
+        alert(`⚠️ Bu fatura numarası (${formData.invoice_number}) zaten kayıtlı! Lütfen farklı bir numara girin.`);
+      } else {
+        alert(error.message || 'Fatura oluşturulurken hata oluştu');
+      }
     } finally {
       setIsUploading(false);
     }
@@ -852,7 +988,11 @@ export default function InvoicesPage() {
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Yeni Fatura Ekle" size="lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* File Upload */}
-          <FileUploader onFileSelect={setSelectedFile} />
+          <FileUploader 
+            onFileSelect={setSelectedFile}
+            onQRDataExtracted={handleQRDataExtracted}
+            enableQRScanning={true}
+          />
           
           {/* Firma Bilgileri */}
           <div className="border-t pt-4">

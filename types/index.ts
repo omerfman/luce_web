@@ -61,6 +61,38 @@ export interface Subcontractor {
   updated_at: string;
 }
 
+export interface InvoiceQRData {
+  taxNumber?: string;        // VKN/TCKN (satıcı vkntckn)
+  buyerVKN?: string;         // Alıcı VKN (avkntckn)
+  invoiceNumber?: string;    // Fatura No
+  invoiceDate?: string;      // Fatura Tarihi
+  totalAmount?: number;      // Toplam Tutar
+  vatAmount?: number;        // KDV Tutarı
+  supplierName?: string;     // Tedarikçi Adı (varsa)
+  goodsServicesTotal?: number; // Mal/Hizmet Tutarı (KDV hariç)
+  withholdingAmount?: number;  // Tevkifat Tutarı
+  etag?: string;             // E-Fatura UUID/ETTN
+  scenario?: string;         // Fatura senaryosu (senaryo)
+  type?: string;             // Fatura tipi (tip)
+  currency?: string;         // Para birimi (parabirimi)
+  rawData: string;           // Ham QR verisi
+}
+
+// Supplier (Tedarikçi) - VKN bazlı firma bilgileri cache
+export interface Supplier {
+  id: string;
+  company_id: string;
+  vkn: string;               // Vergi Kimlik Numarası (10-11 hane)
+  name: string;              // Firma Adı
+  address?: string | null;   // Adres
+  tax_office?: string | null; // Vergi Dairesi
+  phone?: string | null;     // Telefon
+  email?: string | null;     // E-posta
+  notes?: string | null;     // Notlar
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InformalPayment {
   id: string;
   project_id?: string | null;
@@ -94,11 +126,18 @@ export interface Invoice {
   uploaded_by: string;
   created_at: string;
   updated_at: string;
-  // New fields
+  // Invoice details
   supplier_name?: string | null;          // Fatura firma adı
   goods_services_total?: number | null;   // Mal ve hizmet toplam
   vat_amount?: number | null;             // KDV
   withholding_amount?: number | null;     // Tevkifat
+  // QR code metadata (new)
+  supplier_vkn?: string | null;           // Satıcı VKN (QR'dan)
+  buyer_vkn?: string | null;              // Alıcı VKN (QR'dan avkntckn)
+  invoice_scenario?: string | null;       // Fatura senaryosu (TICARIFATURA, TEMELFATURA)
+  invoice_type?: string | null;           // Fatura tipi (SATIS, ALIS)
+  invoice_ettn?: string | null;           // E-Fatura ETTN (UUID)
+  currency?: string | null;               // Para birimi (TRY, USD, EUR)
   // Relations
   company?: Company;
   project_links?: InvoiceProjectLink[];
@@ -192,11 +231,20 @@ export interface PermissionRecord extends Permission {
 // ==================== METADATA TYPES ====================
 
 export interface InvoiceMetadata {
-  supplier?: string;
+  supplier_name?: string;
+  supplier_vkn?: string; // Satıcı VKN (QR'dan)
   invoice_number?: string;
-  tax_amount?: number;
+  vat_amount?: number;
+  withholding_amount?: number;
+  goods_services_total?: number;
   currency?: string;
   notes?: string;
+  // QR kod'dan gelen ekstra bilgiler
+  qr_buyer_vkn?: string; // avkntckn - Alıcı VKN
+  qr_scenario?: string; // senaryo - TICARIFATURA, TEMELFATURA, vb.
+  qr_type?: string; // tip - SATIS, ALIS
+  qr_ettn?: string; // ettn - E-Fatura UUID
+  qr_currency?: string; // parabirimi - TRY, USD, vb.
   [key: string]: any;
 }
 
