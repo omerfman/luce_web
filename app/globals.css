@@ -73,6 +73,27 @@
   .sidebar-link-active {
     @apply bg-primary-50 text-primary-700 hover:bg-primary-100;
   }
+
+  /* Modal Styles */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm;
+  }
+
+  .modal-content {
+    @apply relative max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white shadow-xl;
+  }
+
+  .modal-header {
+    @apply flex items-center justify-between border-b border-gray-200 px-6 py-4;
+  }
+
+  .modal-body {
+    @apply px-6 py-4;
+  }
+
+  .modal-footer {
+    @apply border-t border-gray-200 px-6 py-4;
+  }
 }
 
 @layer utilities {

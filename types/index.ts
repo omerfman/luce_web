@@ -57,8 +57,11 @@ export interface Subcontractor {
   address?: string | null;
   notes?: string | null;
   is_active: boolean;
+  supplier_id?: string | null; // Bağlı supplier ID (eğer varsa)
   created_at: string;
   updated_at: string;
+  // Relations
+  supplier?: Supplier;
 }
 
 export interface InvoiceQRData {
@@ -84,6 +87,9 @@ export interface Supplier {
   company_id: string;
   vkn: string;               // Vergi Kimlik Numarası (10-11 hane)
   name: string;              // Firma Adı
+  supplier_type: 'pending' | 'subcontractor' | 'invoice_company'; // Firma tipi
+  subcontractor_id?: string | null; // Bağlı taşeron ID (eğer varsa)
+  is_active: boolean;        // Aktif mi?
   address?: string | null;   // Adres
   tax_office?: string | null; // Vergi Dairesi
   phone?: string | null;     // Telefon
@@ -91,12 +97,14 @@ export interface Supplier {
   notes?: string | null;     // Notlar
   created_at: string;
   updated_at: string;
+  // Relations
+  subcontractor?: Subcontractor;
 }
 
 export interface InformalPayment {
   id: string;
   project_id?: string | null;
-  subcontractor_id: string;
+  supplier_id: string;
   amount: number;
   description: string;
   payment_date: string;
@@ -107,8 +115,9 @@ export interface InformalPayment {
   company_id: string;
   created_at: string;
   updated_at: string;
+  has_contract?: boolean;
   // Relations
-  subcontractor?: Subcontractor;
+  supplier?: Supplier;
   project?: Project;
   user?: User;
 }
@@ -348,6 +357,60 @@ export interface TableColumn<T> {
   label: string;
   sortable?: boolean;
   render?: (value: any, row: T) => React.ReactNode;
+}
+
+// ==================== BULK INVOICE TYPES ====================
+
+export enum BulkUploadStatus {
+  PENDING = 'pending',           // Dosya yüklendi, işlenmeyi bekliyor
+  PROCESSING = 'processing',     // QR kod okunuyor
+  QR_SUCCESS = 'qr_success',    // QR başarıyla okundu
+  QR_FAILED = 'qr_failed',      // QR okunamadı
+  MANUAL_ENTRY = 'manual_entry', // Manuel bilgi girişi gerekiyor
+  READY = 'ready',               // Kaydedilmeye hazır
+  SAVING = 'saving',             // Kaydediliyor
+  SUCCESS = 'success',           // Başarıyla kaydedildi
+  ERROR = 'error',               // Kayıt hatası
+}
+
+export interface BulkInvoiceItem {
+  id: string;                    // Temporary unique ID for list management
+  file: File;                    // PDF dosyası
+  status: BulkUploadStatus;      // İşlem durumu
+  qrData: InvoiceQRData | null;  // QR'dan okunan data
+  error?: string;                // Hata mesajı (varsa)
+  
+  // Form data (editable)
+  invoice_number: string;
+  invoice_date: string;
+  supplier_name: string;
+  supplier_vkn?: string;
+  vkn?: string;                  // VKN from QR
+  etag?: string;                 // E-fatura ETTN/UUID
+  goods_services_total: string;  // Turkish format: "15.090,40"
+  vat_amount: string;
+  withholding_amount: string;
+  amount: string;                // Calculated total
+  description: string;
+  
+  // Validation
+  isValid: boolean;
+  validationErrors: string[];
+}
+
+export interface BulkInvoiceData {
+  items: BulkInvoiceItem[];
+  totalCount: number;
+  processedCount: number;
+  successCount: number;
+  failedCount: number;
+  isProcessing: boolean;
+}
+
+export interface VKNGroup {
+  vkn: string;
+  supplierName: string;
+  items: BulkInvoiceItem[];
 }
 
 // ==================== UTILITY TYPES ====================

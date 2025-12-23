@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { InformalPayment, Subcontractor, Project } from '@/types';
+import { InformalPayment, Project, Supplier } from '@/types';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { ContractPaymentModal } from '@/components/informal-payments/ContractPaymentModal';
 import {
   getInformalPayments,
   createInformalPayment,
   updateInformalPayment,
   deleteInformalPayment,
 } from '@/lib/supabase/informal-payments';
-import { getSubcontractors } from '@/lib/supabase/subcontractors';
+import { getSubcontractorSuppliers } from '@/lib/supabase/supplier-management';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
@@ -17,10 +18,11 @@ import { supabase } from '@/lib/supabase/client';
 export default function InformalPaymentsPage() {
   const { user } = useAuth();
   const [payments, setPayments] = useState<InformalPayment[]>([]);
-  const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
+  const [subcontractors, setSubcontractors] = useState<Supplier[]>([]); // Supplier tipine çevrildi
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<InformalPayment | null>(null);
   
   // Filters
@@ -37,15 +39,17 @@ export default function InformalPaymentsPage() {
   }, []);
 
   const loadData = async () => {
+    if (!user?.company_id) return;
+    
     try {
       setLoading(true);
-      const [paymentsData, subcontractorsData, projectsData] = await Promise.all([
+      const [paymentsData, subcontractorSuppliersData, projectsData] = await Promise.all([
         getInformalPayments(),
-        getSubcontractors(),
+        getSubcontractorSuppliers(user.company_id), // Yeni sistem kullanılıyor
         loadProjects(),
       ]);
       setPayments(paymentsData);
-      setSubcontractors(subcontractorsData);
+      setSubcontractors(subcontractorSuppliersData);
       setProjects(projectsData);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -145,32 +149,70 @@ export default function InformalPaymentsPage() {
   return (
     <Sidebar>
       <div className="p-6">
-        <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-secondary-900">Gayri Resmi Ödemeler</h1>
-          <p className="mt-1 text-sm text-secondary-600">
-            Toplam: <span className="font-semibold text-primary-600">{formatCurrency(totalAmount)}</span>
-          </p>
+        {/* Header Section */}
+        <div className="mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            {/* Title and Stats */}
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Gayri Resmi Ödemeler</h1>
+              <div className="mt-3 flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100">
+                    <svg className="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Toplam Ödeme</p>
+                    <p className="text-lg font-bold text-primary-600">{formatCurrency(totalAmount)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                    <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Kayıt Sayısı</p>
+                    <p className="text-lg font-bold text-blue-600">{payments.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setIsContractModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-purple-700 hover:to-indigo-700 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Sözleşmeli Ödeme</span>
+              </button>
+              <button
+                onClick={handleAddNew}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 px-5 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-primary-700 hover:to-primary-800 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              >
+                <PlusIcon className="h-5 w-5" />
+                <span>Yeni Ödeme Ekle</span>
+              </button>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={handleAddNew}
-          className="btn-primary flex items-center gap-2"
-        >
-          <PlusIcon className="h-5 w-5" />
-          Yeni Ödeme Ekle
-        </button>
-      </div>
 
       {/* Filters */}
-      <div className="card mb-6">
-        <h3 className="mb-4 text-sm font-medium text-secondary-900">Filtreler</h3>
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-700">Filtreler</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <div>
-            <label className="label">Taşeron</label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Taşeron</label>
             <select
               value={filters.subcontractorId}
               onChange={(e) => setFilters({ ...filters, subcontractorId: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             >
               <option value="">Tümü</option>
               {subcontractors.map((sub) => (
@@ -182,11 +224,11 @@ export default function InformalPaymentsPage() {
           </div>
 
           <div>
-            <label className="label">Proje</label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Proje</label>
             <select
               value={filters.projectId}
               onChange={(e) => setFilters({ ...filters, projectId: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             >
               <option value="">Tümü</option>
               {projects.map((project) => (
@@ -198,47 +240,53 @@ export default function InformalPaymentsPage() {
           </div>
 
           <div>
-            <label className="label">Başlangıç Tarihi</label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Başlangıç Tarihi</label>
             <input
               type="date"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             />
           </div>
 
           <div>
-            <label className="label">Bitiş Tarihi</label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Bitiş Tarihi</label>
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             />
           </div>
 
           <div>
-            <label className="label">Ödeme Yöntemi</label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Ödeme Yöntemi</label>
             <select
               value={filters.paymentMethod}
               onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             >
               <option value="">Tümü</option>
               <option value="Nakit">Nakit</option>
               <option value="Banka Transferi">Banka Transferi</option>
               <option value="Çek">Çek</option>
-              <option value="Senet">Senet</option>
+              <option value="Kredi Kartı">Kredi Kartı</option>
             </select>
           </div>
         </div>
 
-        <div className="mt-4 flex gap-2">
-          <button onClick={handleFilter} className="btn-primary">
+        <div className="mt-5 flex gap-3">
+          <button 
+            onClick={handleFilter} 
+            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-2 text-sm font-medium text-white shadow-md transition-all hover:from-primary-700 hover:to-primary-800 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          >
             Filtrele
           </button>
-          <button onClick={handleClearFilters} className="btn-secondary">
-            Filtreleri Temizle
+          <button 
+            onClick={handleClearFilters} 
+            className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+          >
+            Temizle
           </button>
         </div>
       </div>
@@ -249,68 +297,83 @@ export default function InformalPaymentsPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
         </div>
       ) : payments.length === 0 ? (
-        <div className="card py-12 text-center">
-          <WalletIcon className="mx-auto h-12 w-12 text-secondary-400" />
-          <h3 className="mt-2 text-sm font-medium text-secondary-900">Ödeme bulunamadı</h3>
-          <p className="mt-1 text-sm text-secondary-500">
-            Henüz gayri resmi ödeme eklenmemiş.
+        <div className="card py-16 text-center">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gray-100">
+            <WalletIcon className="h-10 w-10 text-gray-400" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">Henüz ödeme yok</h3>
+          <p className="mt-2 text-sm text-gray-500">
+            Gayri resmi ödeme ekleyerek başlayın.
           </p>
-          <button onClick={handleAddNew} className="btn-primary mt-4">
-            İlk Ödemeyi Ekle
-          </button>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              onClick={() => setIsContractModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Sözleşmeli Ödeme Ekle
+            </button>
+            <button
+              onClick={handleAddNew}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+            >
+              <PlusIcon className="h-5 w-5" />
+              Hızlı Ödeme Ekle
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="card overflow-hidden">
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-secondary-200">
-              <thead className="bg-secondary-50">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="table-header">Tarih</th>
-                  <th className="table-header">Taşeron</th>
-                  <th className="table-header">Proje</th>
-                  <th className="table-header">Açıklama</th>
-                  <th className="table-header">Tutar</th>
-                  <th className="table-header">Ödeme Yöntemi</th>
-                  <th className="table-header">Makbuz No</th>
-                  <th className="table-header">İşlemler</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tarih</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Taşeron</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Proje</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Açıklama</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Tutar</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Yöntem</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">İşlemler</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-secondary-200 bg-white">
+              <tbody className="divide-y divide-gray-200 bg-white">
                 {payments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-secondary-50">
-                    <td className="table-cell text-secondary-900">
+                  <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
                       {formatDate(payment.payment_date)}
                     </td>
-                    <td className="table-cell font-medium text-secondary-900">
-                      {payment.subcontractor?.name || '-'}
+                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                      {payment.supplier?.name || '-'}
                     </td>
-                    <td className="table-cell text-secondary-600">
+                    <td className="px-6 py-4 text-sm text-gray-600">
                       {payment.project?.name || '-'}
                     </td>
-                    <td className="table-cell text-secondary-600">
+                    <td className="max-w-xs truncate px-6 py-4 text-sm text-gray-600" title={payment.description}>
                       {payment.description}
                     </td>
-                    <td className="table-cell font-semibold text-primary-600">
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-semibold text-primary-600">
                       {formatCurrency(payment.amount)}
                     </td>
-                    <td className="table-cell text-secondary-600">
-                      {payment.payment_method || '-'}
+                    <td className="whitespace-nowrap px-6 py-4 text-sm">
+                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                        {payment.payment_method || '-'}
+                      </span>
                     </td>
-                    <td className="table-cell text-secondary-600">
-                      {payment.receipt_number || '-'}
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex gap-2">
+                    <td className="whitespace-nowrap px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleEdit(payment)}
-                          className="text-primary-600 hover:text-primary-700"
+                          className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
                           title="Düzenle"
                         >
                           <EditIcon className="h-5 w-5" />
                         </button>
                         <button
                           onClick={() => handleDelete(payment.id)}
-                          className="text-error-600 hover:text-error-700"
+                          className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
                           title="Sil"
                         >
                           <TrashIcon className="h-5 w-5" />
@@ -335,6 +398,17 @@ export default function InformalPaymentsPage() {
             onSubmit={handleSubmit}
           />
         )}
+        
+        {/* Contract Payment Modal */}
+        {user?.company_id && user?.id && (
+          <ContractPaymentModal
+            isOpen={isContractModalOpen}
+            onClose={() => setIsContractModalOpen(false)}
+            companyId={user.company_id}
+            userId={user.id}
+            onSuccess={loadData}
+          />
+        )}
       </div>
     </Sidebar>
   );
@@ -343,7 +417,7 @@ export default function InformalPaymentsPage() {
 // Modal Component
 interface PaymentModalProps {
   payment: InformalPayment | null;
-  subcontractors: Subcontractor[];
+  subcontractors: Supplier[]; // Supplier tipine çevrildi
   projects: Project[];
   onClose: () => void;
   onSubmit: (data: any) => void;
@@ -351,7 +425,7 @@ interface PaymentModalProps {
 
 function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: PaymentModalProps) {
   const [formData, setFormData] = useState({
-    subcontractor_id: payment?.subcontractor_id || '',
+    supplier_id: payment?.supplier_id || '',
     project_id: payment?.project_id || '',
     amount: payment?.amount?.toString() || '',
     description: payment?.description || '',
@@ -365,7 +439,7 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
     e.preventDefault();
     
     // Validate required fields
-    if (!formData.subcontractor_id) {
+    if (!formData.supplier_id) {
       alert('Lütfen taşeron seçiniz');
       return;
     }
@@ -386,26 +460,26 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="card max-h-[90vh] w-full max-w-2xl overflow-y-auto">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-secondary-900">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content max-w-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="text-xl font-bold text-gray-900">
             {payment ? 'Ödeme Düzenle' : 'Yeni Ödeme Ekle'}
           </h2>
-          <button onClick={onClose} className="text-secondary-400 hover:text-secondary-600">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <XIcon className="h-6 w-6" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="modal-body space-y-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Taşeron *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Taşeron <span className="text-red-500">*</span></label>
               <select
                 required
-                value={formData.subcontractor_id}
-                onChange={(e) => setFormData({ ...formData, subcontractor_id: e.target.value })}
-                className="input"
+                value={formData.supplier_id}
+                onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="">Seçiniz</option>
                 {subcontractors.map((sub) => (
@@ -417,11 +491,11 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
             </div>
 
             <div>
-              <label className="label">Proje (Opsiyonel)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Proje (Opsiyonel)</label>
               <select
                 value={formData.project_id}
                 onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-                className="input"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="">Seçiniz</option>
                 {projects.map((project) => (
@@ -435,83 +509,94 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Ödeme Tarihi *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Ödeme Tarihi <span className="text-red-500">*</span></label>
               <input
                 type="date"
                 required
                 value={formData.payment_date}
                 onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                className="input"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               />
             </div>
 
             <div>
-              <label className="label">Tutar (₺) *</label>
-              <input
-                type="number"
-                required
-                step="0.01"
-                min="0"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="input"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tutar (₺) <span className="text-red-500">*</span></label>
+              <div className="relative">
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="0"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 pr-12 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <span className="text-gray-500 text-sm">₺</span>
+                </div>
+              </div>
             </div>
           </div>
 
           <div>
-            <label className="label">Açıklama *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Açıklama <span className="text-red-500">*</span></label>
             <textarea
               required
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+              placeholder="Ödeme ile ilgili detayları yazın..."
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Ödeme Yöntemi</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Ödeme Yöntemi</label>
               <select
                 value={formData.payment_method}
                 onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                className="input"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="">Seçiniz</option>
-                <option value="Nakit">Nakit</option>
+                <option value="Kasadan Nakit">Kasadan Nakit</option>
+                <option value="Kredi Kartı">Kredi Kartı</option>
                 <option value="Banka Transferi">Banka Transferi</option>
                 <option value="Çek">Çek</option>
                 <option value="Senet">Senet</option>
+                <option value="Havale/EFT">Havale/EFT</option>
+                <option value="Cari">Cari</option>
               </select>
             </div>
 
             <div>
-              <label className="label">Makbuz/Dekont No</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Makbuz/Dekont No</label>
               <input
                 type="text"
                 value={formData.receipt_number}
                 onChange={(e) => setFormData({ ...formData, receipt_number: e.target.value })}
-                className="input"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                placeholder="Opsiyonel"
               />
             </div>
           </div>
 
           <div>
-            <label className="label">Notlar</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Notlar</label>
             <textarea
               rows={2}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="input"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+              placeholder="Ek notlar (opsiyonel)"
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="btn-secondary">
+          <div className="modal-footer flex justify-end gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
               İptal
             </button>
-            <button type="submit" className="btn-primary">
+            <button type="submit" className="px-4 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 text-sm font-medium text-white shadow-md transition-all hover:from-primary-700 hover:to-primary-800 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
               {payment ? 'Güncelle' : 'Ekle'}
             </button>
           </div>

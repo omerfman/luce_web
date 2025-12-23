@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Card } from '@/components/ui/Card';
@@ -12,13 +13,15 @@ import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
 import { uploadInvoicePDF } from '@/lib/supabase/storage';
 import { generateProjectInvoicesReport, downloadPdfBlob } from '@/lib/supabase/pdf-utils';
-import { formatCurrency, formatDate, formatCurrencyInput, parseCurrencyInput, numberToTurkishCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate, parseCurrencyInput, numberToTurkishCurrency } from '@/lib/utils';
 import { Invoice, Project, InvoiceQRData } from '@/types';
 import { getOrCreateSupplier } from '@/lib/supabase/suppliers';
+import * as XLSX from 'xlsx';
 
 type TabType = 'pending' | 'assigned' | 'all';
 
 export default function InvoicesPage() {
+  const router = useRouter();
   const { user, company, hasPermission } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -61,24 +64,6 @@ export default function InvoicesPage() {
   const canDelete = hasPermission('invoices', 'delete');
   const canAssign = hasPermission('invoices', 'assign') || hasPermission('*', '*');
 
-  // Auto-calculate total amount when currency fields change
-  useEffect(() => {
-    const goods = parseCurrencyInput(formData.goods_services_total);
-    const vat = parseCurrencyInput(formData.vat_amount);
-    const withholding = parseCurrencyInput(formData.withholding_amount);
-    
-    // Formula: (Mal/Hizmet + KDV) - Tevkifat
-    const total = goods + vat - withholding;
-    
-    // Only update if there's a calculated value and it's different from current
-    if (total > 0) {
-      const formattedTotal = formatCurrencyInput(total.toString().replace('.', ','));
-      if (formattedTotal !== formData.amount) {
-        setFormData(prev => ({ ...prev, amount: formattedTotal }));
-      }
-    }
-  }, [formData.goods_services_total, formData.vat_amount, formData.withholding_amount]);
-
   async function getSignedUrl(path: string): Promise<string> {
     const { data, error } = await supabase.storage
       .from('invoices')
@@ -98,6 +83,30 @@ export default function InvoicesPage() {
       loadProjects();
     }
   }, [company]);
+
+  // Otomatik tutar hesaplama: Toplam = Mal/Hizmet + KDV - Tevkifat
+  // SADECE QR okunmadığında çalışır (manuel girişte)
+  useEffect(() => {
+    // QR'dan veri geldiyse otomatik hesaplama yapma
+    if (qrMetadata) {
+      console.log('QR data mevcut, otomatik hesaplama devre dışı');
+      return;
+    }
+    
+    const goodsServices = formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : 0;
+    const vat = formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : 0;
+    const withholding = formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : 0;
+    
+    const total = goodsServices + vat - withholding;
+    
+    // Sadece geçerli değerler varsa güncelle
+    if (goodsServices > 0 || vat > 0 || withholding > 0) {
+      setFormData(prev => ({
+        ...prev,
+        amount: numberToTurkishCurrency(total)
+      }));
+    }
+  }, [formData.goods_services_total, formData.vat_amount, formData.withholding_amount, qrMetadata]);
 
   async function loadInvoices() {
     try {
@@ -222,20 +231,47 @@ export default function InvoicesPage() {
     e.preventDefault();
     if (!selectedInvoice || !company) return;
 
-    const validPayments = selectedPaymentTypes.filter(p => p.type && p.amount);
+    const validPayments = selectedPaymentTypes.filter(p => p.type);
     if (validPayments.length === 0) {
-      alert('Lütfen en az bir ödeme tipi ve tutar girin');
+      alert('Lütfen en az bir ödeme tipi seçin');
       return;
     }
 
     setIsUploading(true);
 
     try {
+      // Önceden ödenmiş toplam tutarı hesapla
+      const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      
+      // Şimdi girilecek manuel tutarları topla
+      const manualTotal = validPayments.reduce((sum, p) => {
+        return p.amount ? sum + parseCurrencyInput(p.amount) : sum;
+      }, 0);
+      
+      // Gerçek kalan tutarı hesapla: Fatura - (Önceki Ödemeler + Yeni Manuel Tutarlar)
+      const remainingAmount = Number(selectedInvoice.amount) - totalPaid - manualTotal;
+      
+      // Boş alan sayısını kontrol et
+      const emptyFieldsCount = validPayments.filter(p => !p.amount).length;
+      
+      if (emptyFieldsCount > 1) {
+        alert('Sadece bir ödeme tutarını boş bırakabilirsiniz. Lütfen diğer ödeme tutarlarını girin.');
+        setIsUploading(false);
+        return;
+      }
+      
+      if (emptyFieldsCount === 1 && remainingAmount < 0) {
+        alert(`Girdiğiniz tutarlar toplamı fatura tutarını aşıyor. Kalan tutar: ${formatCurrency(Number(selectedInvoice.amount) - totalPaid)} TL`);
+        setIsUploading(false);
+        return;
+      }
+
       const paymentsToInsert = validPayments.map(p => ({
         invoice_id: selectedInvoice.id,
         company_id: company.id,
         payment_type: p.type,
-        amount: parseCurrencyInput(p.amount),
+        // Tutar boşsa gerçek kalan tutarı kullan
+        amount: p.amount ? parseCurrencyInput(p.amount) : remainingAmount,
         payment_date: new Date().toISOString().split('T')[0],
         created_by: user!.id,
       }));
@@ -289,6 +325,18 @@ export default function InvoicesPage() {
   function handleQRDataExtracted(qrData: InvoiceQRData) {
     console.log('QR data extracted:', qrData);
     
+    // Yeni QR geldiğinde önceki formu temizle (tevkifat gibi eski değerler kalmasın)
+    setFormData({
+      amount: '',
+      invoice_date: new Date().toISOString().split('T')[0],
+      invoice_number: '',
+      description: '',
+      supplier_name: '',
+      goods_services_total: '',
+      vat_amount: '',
+      withholding_amount: '',
+    });
+    
     // Save full QR data for later use in metadata
     setQRMetadata(qrData);
     
@@ -324,10 +372,10 @@ export default function InvoicesPage() {
       console.log('Withholding:', qrData.withholdingAmount, '→', updates.withholding_amount);
     }
     
-    // If we have total amount but not the breakdown, use it
-    if (qrData.totalAmount !== undefined && !qrData.goodsServicesTotal) {
+    // Always use totalAmount from QR (ödenecek miktar) directly as the total
+    if (qrData.totalAmount !== undefined) {
       updates.amount = numberToTurkishCurrency(qrData.totalAmount);
-      console.log('Total Amount:', qrData.totalAmount, '→', updates.amount);
+      console.log('Total Amount (ödenecek):', qrData.totalAmount, '→', updates.amount);
     }
     
     // Auto-fill supplier name from VKN if available
@@ -625,6 +673,80 @@ export default function InvoicesPage() {
     }
   }
 
+  function handleExportExcel() {
+    try {
+      // Ekranda görünen filtrelenmiş faturaları al
+      const dataToExport = filteredInvoices.map((invoice, index) => {
+        // Ödeme bilgilerini hesapla
+        const totalPaid = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
+        const remaining = Number(invoice.amount) - totalPaid;
+        const paymentStatus = remaining === 0 ? 'Ödendi' : totalPaid > 0 ? 'Kısmi Ödeme' : 'Ödenmedi';
+        
+        // Proje isimlerini birleştir
+        const projectNames = invoice.project_links?.map((link: any) => link.project?.name).filter(Boolean).join(', ') || 'Atanmadı';
+        
+        return {
+          'Sıra': index + 1,
+          'Fatura No': invoice.invoice_number,
+          'Tarih': formatDate(invoice.invoice_date),
+          'Tedarikçi': invoice.supplier_name || '-',
+          'Tutar (₺)': Number(invoice.amount).toFixed(2),
+          'Ödenen (₺)': totalPaid.toFixed(2),
+          'Kalan (₺)': remaining.toFixed(2),
+          'Ödeme Durumu': paymentStatus,
+          'Projeler': projectNames,
+          'Açıklama': invoice.description || '-',
+        };
+      });
+
+      if (dataToExport.length === 0) {
+        alert('Dışa aktarılacak fatura bulunamadı!');
+        return;
+      }
+
+      // Excel çalışma kitabı oluştur
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Faturalar');
+
+      // Kolon genişliklerini ayarla
+      worksheet['!cols'] = [
+        { wch: 6 },  // Sıra
+        { wch: 15 }, // Fatura No
+        { wch: 12 }, // Tarih
+        { wch: 25 }, // Tedarikçi
+        { wch: 12 }, // Tutar
+        { wch: 12 }, // Ödenen
+        { wch: 12 }, // Kalan
+        { wch: 15 }, // Ödeme Durumu
+        { wch: 30 }, // Projeler
+        { wch: 40 }, // Açıklama
+      ];
+
+      // Dosya adını oluştur (tarih + filtre bilgisi)
+      const date = new Date().toISOString().split('T')[0];
+      let fileName = `Faturalar_${date}`;
+      
+      if (activeTab === 'pending') fileName += '_AtanmayanFaturalar';
+      else if (activeTab === 'assigned') fileName += '_AtananFaturalar';
+      
+      if (filters.projectId) {
+        const project = projects.find(p => p.id === filters.projectId);
+        if (project) fileName += `_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      
+      fileName += '.xlsx';
+
+      // Excel dosyasını indir
+      XLSX.writeFile(workbook, fileName);
+      
+      console.log(`Excel export: ${dataToExport.length} fatura dışa aktarıldı`);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('Excel dosyası oluşturulurken bir hata oluştu');
+    }
+  }
+
   if (isLoading) {
     return (
       <Sidebar>
@@ -682,18 +804,34 @@ export default function InvoicesPage() {
           </div>
           <div className="flex gap-3">
             {assignedCount > 0 && (
-              <Button 
-                onClick={handleGenerateReport}
-                isLoading={isGeneratingReport}
-                variant="ghost"
-              >
-                📥 PDF Rapor İndir
-              </Button>
+              <>
+                <Button 
+                  onClick={handleExportExcel}
+                  variant="ghost"
+                >
+                  📊 Excel İndir
+                </Button>
+                <Button 
+                  onClick={handleGenerateReport}
+                  isLoading={isGeneratingReport}
+                  variant="ghost"
+                >
+                  📥 PDF Rapor İndir
+                </Button>
+              </>
             )}
             {canCreate && (
-              <Button onClick={() => setIsModalOpen(true)}>
-                + Yeni Fatura Ekle
-              </Button>
+              <>
+                <Button onClick={() => setIsModalOpen(true)}>
+                  + Yeni Fatura Ekle
+                </Button>
+                <Button 
+                  onClick={() => router.push('/invoices/bulk')}
+                  variant="secondary"
+                >
+                  📦 Toplu Fatura Ekle
+                </Button>
+              </>
             )}
             <Button 
               onClick={() => setShowFilters(!showFilters)}
@@ -990,6 +1128,20 @@ export default function InvoicesPage() {
           {/* File Upload */}
           <FileUploader 
             onFileSelect={setSelectedFile}
+            onFileRemove={() => {
+              setQRMetadata(null);
+              // Form'u da temizle (tevkifat gibi alanlar kalmasın)
+              setFormData({
+                amount: '',
+                invoice_date: new Date().toISOString().split('T')[0],
+                invoice_number: '',
+                description: '',
+                supplier_name: '',
+                goods_services_total: '',
+                vat_amount: '',
+                withholding_amount: '',
+              });
+            }}
             onQRDataExtracted={handleQRDataExtracted}
             enableQRScanning={true}
           />
@@ -1051,15 +1203,27 @@ export default function InvoicesPage() {
                 placeholder="50.000,00"
               />
               <CurrencyInput
-                label="Toplam Tutar (₺)"
+                label="Toplam Tutar (₺) 🧮"
                 value={formData.amount}
                 onChange={(value) => setFormData({ ...formData, amount: value })}
                 required
-                placeholder="Otomatik hesaplanır"
-                readOnly
-                className="bg-secondary-50"
+                placeholder={qrMetadata ? "QR'dan gelen tutar" : "Otomatik hesaplanır veya manuel girin"}
+                className={qrMetadata ? "bg-blue-50 font-semibold" : "bg-green-50 font-semibold"}
               />
             </div>
+            {formData.amount && (
+              <div className={`mt-3 rounded-lg border px-3 py-2 ${qrMetadata ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+                {qrMetadata ? (
+                  <p className="text-xs text-blue-700">
+                    <span className="font-medium">🔷 QR Verisi:</span> Faturada yazdığı ödenecek tutar: <span className="font-bold text-blue-900">{formData.amount}</span> (Değiştirebilirsiniz)
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700">
+                    <span className="font-medium">💡 Otomatik Hesaplama:</span> Mal/Hizmet ({formData.goods_services_total || '0'}) + KDV ({formData.vat_amount || '0'}) - Tevkifat ({formData.withholding_amount || '0'}) = <span className="font-bold text-amber-900">{formData.amount}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Açıklama */}
@@ -1136,15 +1300,21 @@ export default function InvoicesPage() {
                 placeholder="50.000,00"
               />
               <CurrencyInput
-                label="Toplam Tutar (₺)"
+                label="Toplam Tutar (₺) 🧮"
                 value={formData.amount}
                 onChange={(value) => setFormData({ ...formData, amount: value })}
                 required
-                placeholder="Otomatik hesaplanır"
-                readOnly
-                className="bg-secondary-50"
+                placeholder="Manuel girin veya otomatik hesaplansın"
+                className="bg-amber-50 font-semibold"
               />
             </div>
+            {formData.amount && (
+              <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                <p className="text-xs text-amber-700">
+                  <span className="font-medium">💡 Otomatik Hesaplama:</span> Mal/Hizmet ({formData.goods_services_total || '0'}) + KDV ({formData.vat_amount || '0'}) - Tevkifat ({formData.withholding_amount || '0'}) = <span className="font-bold text-amber-900">{formData.amount}</span>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Açıklama */}
@@ -1271,6 +1441,21 @@ export default function InvoicesPage() {
             </div>
           )}
 
+          {/* Kalan tutar bilgisi - ödemeler yoksa */}
+          {payments.length === 0 && selectedInvoice && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-900">Ödenecek Tutar:</span>
+                <span className="text-base font-bold text-blue-600">
+                  {formatCurrency(selectedInvoice.amount)}
+                </span>
+              </div>
+              <p className="text-xs text-blue-700 mt-1">
+                💡 Tutar alanını boş bırakırsanız bu tutarın tamamı ödenmiş olarak işaretlenir
+              </p>
+            </div>
+          )}
+
           {/* New Payments */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -1314,8 +1499,7 @@ export default function InvoicesPage() {
                   <CurrencyInput
                     value={payment.amount}
                     onChange={(value) => updatePaymentType(index, 'amount', value)}
-                    required
-                    placeholder="0,00"
+                    placeholder="Boş bırakırsanız kalan tutar eklenir"
                   />
                 </div>
                 {selectedPaymentTypes.length > 1 && (

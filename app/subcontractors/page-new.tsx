@@ -11,9 +11,6 @@ import {
   assignToSubcontractor,
   assignToInvoiceCompany,
   unassignSupplier,
-  createSubcontractor,
-  createInvoiceCompany,
-  deleteSupplier,
   type SupplierStats
 } from '@/lib/supabase/supplier-management';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -65,11 +62,6 @@ export default function SubcontractorsPage() {
   const [stats, setStats] = useState<SupplierStats>({ pending: 0, subcontractor: 0, invoice_company: 0, total: 0, active: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
-  
-  // Modal state
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'subcontractor' | 'invoice_company'>('subcontractor');
-  const [formData, setFormData] = useState({ name: '', vkn: '' });
 
   // İlk yükleme
   useEffect(() => {
@@ -138,35 +130,6 @@ export default function SubcontractorsPage() {
     }
   };
 
-  // Silme işlemi
-  const handleDelete = async (supplierId: string, supplierName: string) => {
-    if (!user?.company_id) return;
-    
-    const confirmed = confirm(
-      `"${supplierName}" firmasını silmek istediğinizden emin misiniz?\n\n` +
-      `⚠️ DİKKAT: Bu firma faturalarda kullanılmışsa silinemez.\n` +
-      `Eğer kullanılmışsa sadece deaktif edilir.`
-    );
-    
-    if (!confirmed) return;
-    
-    try {
-      setLoading(true);
-      await deleteSupplier(supplierId, user.company_id);
-      alert('✅ Firma başarıyla silindi!');
-      loadData();
-    } catch (error: any) {
-      console.error('Error deleting supplier:', error);
-      if (error.message?.includes('faturalarda kullanılmış')) {
-        alert('⚠️ ' + error.message);
-      } else {
-        alert('❌ Silinirken hata oluştu: ' + (error.message || 'Bilinmeyen hata'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Checkbox işlemleri
   const handleCheckboxChange = (supplierId: string) => {
     setSelectedSuppliers(prev => 
@@ -183,68 +146,6 @@ export default function SubcontractorsPage() {
           ? [] 
           : pendingSuppliers.map(s => s.id)
       );
-    }
-  };
-
-  // Manuel ekleme
-  const handleOpenAddModal = (type: 'subcontractor' | 'invoice_company') => {
-    setModalType(type);
-    setFormData({ name: '', vkn: '' });
-    setIsAddModalOpen(true);
-  };
-
-  const handleManualAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.company_id || !formData.name.trim()) {
-      alert('Firma adı zorunludur!');
-      return;
-    }
-
-    // VKN format kontrolü (frontend)
-    if (formData.vkn.trim() && !/^\d{10,11}$/.test(formData.vkn.trim())) {
-      alert('⚠️ VKN 10 veya 11 haneli rakam olmalıdır!');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      if (modalType === 'subcontractor') {
-        await createSubcontractor(
-          user.company_id, 
-          formData.name.trim(), 
-          formData.vkn.trim() || undefined
-        );
-        alert('✅ Taşeron başarıyla eklendi!');
-      } else {
-        await createInvoiceCompany(
-          user.company_id, 
-          formData.name.trim(), 
-          formData.vkn.trim() || undefined
-        );
-        alert('✅ Fatura firması başarıyla eklendi!');
-      }
-      
-      setIsAddModalOpen(false);
-      setFormData({ name: '', vkn: '' });
-      await loadData(); // Await ekledik
-    } catch (error: any) {
-      console.error('Error adding:', error);
-      
-      // Detaylı hata mesajları
-      if (error.code === '23505' || error.message?.includes('duplicate')) {
-        alert('⚠️ Bu VKN zaten kayıtlı!');
-      } else if (error.code === '23502') {
-        alert('⚠️ Zorunlu alanlar eksik!');
-      } else if (error.code === 'PGRST204') {
-        alert('⚠️ Veritabanı şeması hatası! Lütfen migration\'ı çalıştırın.');
-      } else if (error.message?.includes('VKN')) {
-        alert('⚠️ ' + error.message);
-      } else {
-        alert('❌ Eklenirken hata oluştu: ' + (error.message || 'Bilinmeyen hata'));
-      }
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -341,18 +242,14 @@ export default function SubcontractorsPage() {
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => handleAssign(supplier.id, 'subcontractor')}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                          title="Taşeron olarak ata"
+                          className="btn-sm bg-blue-600 text-white hover:bg-blue-700"
                         >
-                          <UserGroupIcon className="h-4 w-4" />
                           Taşeron
                         </button>
                         <button
                           onClick={() => handleAssign(supplier.id, 'invoice_company')}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                          title="Fatura firması olarak ata"
+                          className="btn-sm bg-green-600 text-white hover:bg-green-700"
                         >
-                          <DocumentIcon className="h-4 w-4" />
                           Fatura Firması
                         </button>
                       </div>
@@ -409,28 +306,12 @@ export default function SubcontractorsPage() {
                     </span>
                   </td>
                   <td className="table-cell text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleUnassign(supplier.id)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
-                        title="Atamayı kaldır (pending'e geri döner)"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        Kaldır
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier.id, supplier.name)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                        title="Firmayı sil"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Sil
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleUnassign(supplier.id)}
+                      className="btn-sm btn-outline-danger"
+                    >
+                      Atamayı Kaldır
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -480,28 +361,12 @@ export default function SubcontractorsPage() {
                     </span>
                   </td>
                   <td className="table-cell text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleUnassign(supplier.id)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
-                        title="Atamayı kaldır (pending'e geri döner)"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        Kaldır
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier.id, supplier.name)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                        title="Firmayı sil"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Sil
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleUnassign(supplier.id)}
+                      className="btn-sm btn-outline-danger"
+                    >
+                      Atamayı Kaldır
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -569,7 +434,7 @@ export default function SubcontractorsPage() {
         </div>
 
         {/* Tab Navigasyonu */}
-        <div className="mb-6 flex items-center justify-between border-b border-secondary-200">
+        <div className="mb-6 border-b border-secondary-200">
           <nav className="-mb-px flex space-x-8">
             <button
               onClick={() => setActiveTab('pending')}
@@ -628,94 +493,10 @@ export default function SubcontractorsPage() {
               </span>
             </button>
           </nav>
-
-          {/* + Ekle Butonları */}
-          <div className="flex gap-2">
-            {activeTab === 'subcontractors' && (
-              <button
-                onClick={() => handleOpenAddModal('subcontractor')}
-                className="btn-sm btn-primary flex items-center gap-1"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Taşeron Ekle
-              </button>
-            )}
-            {activeTab === 'invoice_companies' && (
-              <button
-                onClick={() => handleOpenAddModal('invoice_company')}
-                className="btn-sm btn-primary flex items-center gap-1"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Firma Ekle
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Tab İçeriği */}
         {renderTabContent()}
-
-        {/* Manuel Ekleme Modalı */}
-        {isAddModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-              <h2 className="mb-4 text-lg font-semibold text-secondary-900">
-                {modalType === 'subcontractor' ? '🔧 Yeni Taşeron Ekle' : '📄 Yeni Fatura Firması Ekle'}
-              </h2>
-              <form onSubmit={handleManualAdd} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    Firma Adı <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-md border border-secondary-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Örn: ABC İnşaat Ltd. Şti."
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    VKN (Opsiyonel)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.vkn}
-                    onChange={(e) => setFormData({ ...formData, vkn: e.target.value })}
-                    className="w-full rounded-md border border-secondary-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="10 haneli VKN"
-                    maxLength={11}
-                  />
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddModalOpen(false);
-                      setFormData({ name: '', vkn: '' });
-                    }}
-                    className="flex-1 btn-secondary"
-                  >
-                    İptal
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 btn-primary"
-                    disabled={loading}
-                  >
-                    {loading ? 'Ekleniyor...' : 'Ekle'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     </Sidebar>
   );

@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
 
 // Environment variables validation
@@ -21,6 +21,14 @@ export const supabase = createBrowserClient<Database>(
 );
 
 /**
+ * Create a new Supabase client instance
+ * Useful for creating clients with custom options
+ */
+export const createClient = () => {
+  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey);
+};
+
+/**
  * Server-side Supabase client
  * Should only be used in API routes or server components
  * Uses service role key - bypasses RLS (use with caution)
@@ -32,7 +40,7 @@ export const createServerClient = () => {
     throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
   }
   
-  return createClient<Database>(supabaseUrl!, serviceRoleKey, {
+  return createSupabaseClient<Database>(supabaseUrl!, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

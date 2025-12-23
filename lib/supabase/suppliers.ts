@@ -71,6 +71,8 @@ export async function createSupplier(
           company_id: companyId,
           vkn,
           name,
+          supplier_type: 'pending', // Yeni supplier'lar varsayılan olarak 'pending'
+          is_active: true,           // Aktif olarak başlasın
           ...additionalData,
         },
       ])

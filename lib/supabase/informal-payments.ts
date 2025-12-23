@@ -6,7 +6,7 @@ import { InformalPayment } from '@/types';
  */
 export interface InformalPaymentFilters {
   projectId?: string;
-  subcontractorId?: string;
+  supplierId?: string;
   startDate?: string;
   endDate?: string;
   paymentMethod?: string;
@@ -22,7 +22,7 @@ export async function getInformalPayments(
     .from('informal_payments')
     .select(`
       *,
-      subcontractor:subcontractors(*),
+      supplier:suppliers(*),
       project:projects(*),
       user:users(id, name, email)
     `)
@@ -32,8 +32,8 @@ export async function getInformalPayments(
   if (filters?.projectId) {
     query = query.eq('project_id', filters.projectId);
   }
-  if (filters?.subcontractorId) {
-    query = query.eq('subcontractor_id', filters.subcontractorId);
+  if (filters?.supplierId) {
+    query = query.eq('supplier_id', filters.supplierId);
   }
   if (filters?.startDate) {
     query = query.gte('payment_date', filters.startDate);
@@ -63,7 +63,7 @@ export async function getInformalPaymentById(id: string): Promise<InformalPaymen
     .from('informal_payments')
     .select(`
       *,
-      subcontractor:subcontractors(*),
+      supplier:suppliers(*),
       project:projects(*),
       user:users(id, name, email)
     `)
@@ -86,26 +86,26 @@ export async function getInformalPaymentsByProject(projectId: string): Promise<I
 }
 
 /**
- * Get informal payments for a specific subcontractor
+ * Get informal payments for a specific supplier
  */
-export async function getInformalPaymentsBySubcontractor(
-  subcontractorId: string
+export async function getInformalPaymentsBySupplier(
+  supplierId: string
 ): Promise<InformalPayment[]> {
-  return getInformalPayments({ subcontractorId });
+  return getInformalPayments({ supplierId });
 }
 
 /**
  * Create a new informal payment
  */
 export async function createInformalPayment(
-  payment: Omit<InformalPayment, 'id' | 'created_at' | 'updated_at' | 'subcontractor' | 'project' | 'user'>
+  payment: Omit<InformalPayment, 'id' | 'created_at' | 'updated_at' | 'supplier' | 'project' | 'user'>
 ): Promise<InformalPayment> {
   const { data, error } = await supabase
     .from('informal_payments')
     .insert(payment)
     .select(`
       *,
-      subcontractor:subcontractors(*),
+      supplier:suppliers(*),
       project:projects(*),
       user:users(id, name, email)
     `)
@@ -124,7 +124,7 @@ export async function createInformalPayment(
  */
 export async function updateInformalPayment(
   id: string,
-  updates: Partial<Omit<InformalPayment, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'company_id' | 'subcontractor' | 'project' | 'user'>>
+  updates: Partial<Omit<InformalPayment, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'company_id' | 'supplier' | 'project' | 'user'>>
 ): Promise<InformalPayment> {
   const { data, error } = await supabase
     .from('informal_payments')
@@ -132,7 +132,7 @@ export async function updateInformalPayment(
     .eq('id', id)
     .select(`
       *,
-      subcontractor:subcontractors(*),
+      supplier:suppliers(*),
       project:projects(*),
       user:users(id, name, email)
     `)
@@ -162,15 +162,15 @@ export async function deleteInformalPayment(id: string): Promise<void> {
 }
 
 /**
- * Get total payments amount for a specific subcontractor
+ * Get total payments amount for a specific supplier
  */
-export async function getTotalPaymentsBySubcontractor(
-  subcontractorId: string
+export async function getTotalPaymentsBySupplier(
+  supplierId: string
 ): Promise<number> {
   const { data, error } = await supabase
     .from('informal_payments')
     .select('amount')
-    .eq('subcontractor_id', subcontractorId);
+    .eq('supplier_id', supplierId);
 
   if (error) {
     console.error('Error fetching total payments:', error);
@@ -200,35 +200,35 @@ export async function getTotalPaymentsByProject(projectId: string): Promise<numb
 }
 
 /**
- * Get payment statistics grouped by subcontractor
+ * Get payment statistics grouped by supplier
  */
-export async function getPaymentStatsBySubcontractor(): Promise<
-  Array<{ subcontractor_id: string; total: number; count: number }>
+export async function getPaymentStatsBySupplier(): Promise<
+  Array<{ supplier_id: string; total: number; count: number }>
 > {
   const { data, error } = await supabase
     .from('informal_payments')
-    .select('subcontractor_id, amount');
+    .select('supplier_id, amount');
 
   if (error) {
     console.error('Error fetching payment stats:', error);
     throw error;
   }
 
-  // Group by subcontractor_id
+  // Group by supplier_id
   const stats = data?.reduce((acc, payment) => {
-    const existing = acc.find(item => item.subcontractor_id === payment.subcontractor_id);
+    const existing = acc.find(item => item.supplier_id === payment.supplier_id);
     if (existing) {
       existing.total += Number(payment.amount);
       existing.count += 1;
     } else {
       acc.push({
-        subcontractor_id: payment.subcontractor_id,
+        supplier_id: payment.supplier_id,
         total: Number(payment.amount),
         count: 1,
       });
     }
     return acc;
-  }, [] as Array<{ subcontractor_id: string; total: number; count: number }>);
+  }, [] as Array<{ supplier_id: string; total: number; count: number }>);
 
   return stats || [];
 }
@@ -276,7 +276,7 @@ export async function getRecentInformalPayments(limit: number = 5): Promise<Info
     .from('informal_payments')
     .select(`
       *,
-      subcontractor:subcontractors(*),
+      supplier:suppliers(*),
       project:projects(*),
       user:users(id, name, email)
     `)

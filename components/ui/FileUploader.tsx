@@ -6,6 +6,7 @@ import { InvoiceQRData } from '@/types';
 
 interface FileUploaderProps {
   onFileSelect: (file: File) => void;
+  onFileRemove?: () => void;  // Dosya kaldırıldığında çağrılır
   onQRDataExtracted?: (qrData: InvoiceQRData) => void;
   accept?: string;
   maxSize?: number;
@@ -16,6 +17,7 @@ interface FileUploaderProps {
 
 export function FileUploader({
   onFileSelect,
+  onFileRemove,
   onQRDataExtracted,
   accept = '.pdf',
   maxSize = FILE_VALIDATION.MAX_SIZE,
@@ -125,6 +127,9 @@ export function FileUploader({
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    // Parent component'e dosyanın kaldırıldığını bildir
+    onFileSelect(null as any); // File'i null yap
+    onFileRemove?.(); // QR metadata'yı temizlemek için
   }
 
   return (
