@@ -185,13 +185,13 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
         createdBy: 'Yetkili İsmi' // TODO: User bilgisinden çek
       };
 
-      const pdf = generateContractPaymentPDF(pdfData);
+      const pdfBlob = await generateContractPaymentPDF(pdfData);
 
       // PDF'i önizle ve indir
-      previewContractPDF(pdf); // Önizleme
+      await previewContractPDF(pdfBlob); // Önizleme
       
-      setTimeout(() => {
-        downloadContractPDF(pdf, `${receiptNumber}.pdf`); // İndirme
+      setTimeout(async () => {
+        await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`); // İndirme
       }, 500);
 
       // Başarılı

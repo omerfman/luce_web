@@ -1,10 +1,17 @@
 /**
  * Sözleşmeli Ödeme için PDF Makbuz/Tutanak Oluşturucu
  * Türkiye standart resmi evrak formatında
+ * 
+ * pdfMake kullanılarak Türkçe karakter desteği ile oluşturulur
  */
 
-import jsPDF from 'jspdf';
+import * as pdfMake from 'pdfmake/build/pdfmake';
+import * as pdfFonts from 'pdfmake/build/vfs_fonts';
+import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 import { numberToWords, formatCurrency } from '@/lib/utils/number-to-words';
+
+// pdfMake fontlarını ayarla
+(pdfMake as any).vfs = pdfFonts;
 
 export interface ContractPaymentData {
   receiptNumber: string;
@@ -24,211 +31,175 @@ export interface ContractPaymentData {
 /**
  * İş Teslim Tutanağı ve Ödeme Makbuzu PDF'i oluşturur
  * Format: ELDEN ÖDEME TESLİM VE TAHSİL BELGESİ
+ * 
+ * @returns Promise<Blob> - PDF blob'u
  */
-export function generateContractPaymentPDF(data: ContractPaymentData): jsPDF {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-    compress: true
-  });
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 25;
-  const contentWidth = pageWidth - (margin * 2);
-
-  // Helvetica fontunu kullan
-  doc.setFont('helvetica', 'normal');
-
-  let yPos = margin;
-
-  // ===================================
-  // TARİH (SAĞ ÜST)
-  // ===================================
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
-  const dateText = `Tarih: ${data.date}`;
-  const dateWidth = doc.getTextWidth(dateText);
-  doc.text(dateText, pageWidth - margin - dateWidth, yPos);
-  
-  yPos += 15;
-
-  // ===================================
-  // BAŞLIK (ORTALANMIŞ, BÜYÜK PUNTODA)
-  // ===================================
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  const title = 'ELDEN ODEME TESLIM VE TAHSIL BELGESI';
-  const titleWidth = doc.getTextWidth(title);
-  doc.text(title, (pageWidth - titleWidth) / 2, yPos);
-  
-  yPos += 15;
-
-  // ===================================
-  // ANA METİN (PARAGRAF FORMATINDA)
-  // ===================================
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
-  
-  // Satır yüksekliği
-  const lineHeight = 7;
-  
-  // Giriş metni
-  doc.text('Bu belge,', margin, yPos);
-  yPos += lineHeight;
-  
-  // Proje adı (tırnak içinde, kalın)
-  doc.setFont('helvetica', 'bold');
-  const projectLine = `"${data.projectName}"`;
-  doc.text(projectLine, margin, yPos);
-  doc.setFont('helvetica', 'normal');
-  const projectLineWidth = doc.getTextWidth(projectLine);
-  doc.text(' kapsaminda gerceklestirilen', margin + projectLineWidth, yPos);
-  yPos += lineHeight;
-  
-  // İş açıklaması (tırnak içinde, kalın)
-  doc.setFont('helvetica', 'bold');
-  const jobLine = `"${data.jobDescription}"`;
-  const jobLines = doc.splitTextToSize(jobLine, contentWidth - 5);
-  doc.text(jobLines, margin, yPos);
-  yPos += jobLines.length * lineHeight;
-  
-  doc.setFont('helvetica', 'normal');
-  doc.text('islerine istinaden;', margin, yPos);
-  yPos += lineHeight + 3;
-  
-  // İşi yapan kişi (tırnak içinde, kalın)
-  doc.setFont('helvetica', 'bold');
-  const recipientLine = `"${data.recipientName}"`;
-  doc.text(recipientLine, margin, yPos);
-  doc.setFont('helvetica', 'normal');
-  const recipientLineWidth = doc.getTextWidth(recipientLine);
-  doc.text(' tarafindan yapilan', margin + recipientLineWidth, yPos);
-  yPos += lineHeight;
-  
-  doc.text('calismalar karsiliginda,', margin, yPos);
-  yPos += lineHeight;
-  
-  // Tarih (tırnak içinde, kalın)
-  doc.setFont('helvetica', 'bold');
-  const dateInText = `"${data.date}"`;
-  doc.text(dateInText, margin, yPos);
-  doc.setFont('helvetica', 'normal');
-  const dateInTextWidth = doc.getTextWidth(dateInText);
-  doc.text(' tarihinde,', margin + dateInTextWidth, yPos);
-  yPos += lineHeight + 5;
-  
-  // ===================================
-  // TUTAR BİLGİSİ (ALT ÇIZGILI)
-  // ===================================
+export async function generateContractPaymentPDF(data: ContractPaymentData): Promise<Blob> {
   const amountStr = formatCurrency(data.amount);
   const amountWords = numberToWords(data.amount);
-  
-  // Tutar satırı
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  const amountLine = `${amountStr}`;
-  doc.text(amountLine, margin, yPos);
-  const amountLineWidth = doc.getTextWidth(amountLine);
-  
-  // Alt çizgi
-  doc.setLineWidth(0.3);
-  doc.line(margin, yPos + 1, margin + amountLineWidth + 10, yPos + 1);
-  
-  yPos += lineHeight;
-  
-  // Yazıyla
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
-  doc.text('(yaziyla: ', margin, yPos);
-  doc.setFont('helvetica', 'bold');
-  const yaziyla = `${amountWords} Turk Lirasi`;
-  const yazilyaWidth = doc.getTextWidth('(yaziyla: ');
-  doc.text(yaziyla, margin + yazilyaWidth, yPos);
-  doc.setFont('helvetica', 'normal');
-  doc.text(')', margin + yazilyaWidth + doc.getTextWidth(yaziyla), yPos);
-  
-  yPos += lineHeight + 3;
-  
-  // Devam metni
-  doc.text('tutarindaki odemenin', margin, yPos);
-  yPos += lineHeight;
-  
-  // Ödeme tipi (tırnak içinde, kalın)
-  doc.setFont('helvetica', 'bold');
-  const paymentMethodLine = `"${data.paymentMethod}"`;
-  doc.text(paymentMethodLine, margin, yPos);
-  doc.setFont('helvetica', 'normal');
-  const paymentMethodLineWidth = doc.getTextWidth(paymentMethodLine);
-  doc.text(' yoluyla eksiksiz teslim alindigini gosterir.', margin + paymentMethodLineWidth, yPos);
-  yPos += lineHeight + 8;
-  
-  // Beyan metni
-  doc.setFont('helvetica', 'italic');
-  doc.text('Isi yapan kisi, yukarida belirtilen bedeli tamamen aldigini kabul ve beyan eder.', margin, yPos);
-  doc.setFont('helvetica', 'normal');
-  
-  yPos += lineHeight + 15;
 
-  // ===================================
-  // İMZA ALANLARI (YAN YANA)
-  // ===================================
-  const signatureY = yPos;
-  const signatureBoxWidth = (contentWidth - 15) / 2;
+  const docDefinition: TDocumentDefinitions = {
+    pageSize: 'A4',
+    pageMargins: [60, 60, 60, 60],
+    defaultStyle: {
+      font: 'Roboto',
+      fontSize: 11,
+      lineHeight: 1.3
+    },
+    content: [
+      // TARİH (SAĞ ÜST)
+      {
+        text: `Tarih: ${data.date}`,
+        alignment: 'right',
+        fontSize: 11,
+        margin: [0, 0, 0, 20]
+      },
 
-  // Sol: Parayı Veren
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Parayi Veren', margin, signatureY);
-  yPos = signatureY + 6;
-  
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(`"${data.companyName}"`, margin, yPos);
-  yPos += 6;
-  
-  doc.text('Imza:', margin, yPos);
-  yPos += 3;
-  
-  // İmza çizgisi
-  doc.setLineWidth(0.2);
-  doc.line(margin + 15, yPos, margin + signatureBoxWidth - 5, yPos);
+      // BAŞLIK (ORTALANMIŞ, BÜYÜK PUNTODA)
+      {
+        text: 'ELDEN ÖDEME TESLİM VE TAHSİL BELGESİ',
+        style: 'header',
+        alignment: 'center',
+        fontSize: 16,
+        bold: true,
+        margin: [0, 0, 0, 20]
+      },
 
-  // Sağ: Parayı Alan
-  const rightSignX = pageWidth - margin - signatureBoxWidth;
-  yPos = signatureY;
-  
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Parayi Alan', rightSignX, yPos);
-  yPos += 6;
-  
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(`"${data.recipientName}"`, rightSignX, yPos);
-  yPos += 6;
-  
-  doc.text('Imza:', rightSignX, yPos);
-  yPos += 3;
-  
-  // İmza çizgisi
-  doc.line(rightSignX + 15, yPos, pageWidth - margin - 5, yPos);
+      // ANA METİN (PARAGRAF FORMATINDA)
+      {
+        text: [
+          { text: `"${data.projectName}"`, bold: true },
+          ' kapsamında gerçekleştirilen\n\n',
+          { text: `"${data.jobDescription}"`, bold: true },
+          '\n\nişlerine istinaden;\n\n',
+          { text: `"${data.recipientName}"`, bold: true },
+          ' tarafından yapılan çalışmalar karşılığında,\n\n',
+          { text: `"${data.date}"`, bold: true },
+          ' tarihinde,\n\n'
+        ],
+        margin: [0, 0, 0, 15]
+      },
 
-  return doc;
+      // TUTAR BİLGİSİ (VURGULU)
+      {
+        text: amountStr,
+        fontSize: 14,
+        bold: true,
+        decoration: 'underline',
+        margin: [0, 0, 0, 8]
+      },
+
+      // YAZYLA TUTAR
+      {
+        text: [
+          '(yazıyla: ',
+          { text: `${amountWords} Türk Lirası`, bold: true },
+          ')'
+        ],
+        margin: [0, 0, 0, 15]
+      },
+
+      // DEVAM METNİ
+      {
+        text: [
+          'tutarındaki ödemenin\n\n',
+          { text: `"${data.paymentMethod}"`, bold: true },
+          ' yoluyla eksiksiz teslim edilmiştir.\n\n'
+        ],
+        margin: [0, 0, 0, 15]
+      },
+
+      // BEYAN METNİ
+      {
+        text: 'İşi yapan kişi, yukarıda belirtilen bedeli tamamen aldığını kabul ve beyan eder.',
+        italics: true,
+        margin: [0, 0, 0, 30]
+      },
+
+      // İMZA ALANLARI
+      {
+        columns: [
+          // Sol: Parayı Veren
+          {
+            width: '45%',
+            stack: [
+              { text: 'Parayı Veren', bold: true, margin: [0, 0, 0, 10] },
+              { text: `"${data.companyName}"`, margin: [0, 0, 0, 10] },
+              { text: 'İmza:', margin: [0, 0, 0, 5] },
+              {
+                canvas: [
+                  {
+                    type: 'line',
+                    x1: 40,
+                    y1: 0,
+                    x2: 200,
+                    y2: 0,
+                    lineWidth: 0.5
+                  }
+                ]
+              }
+            ]
+          },
+          // Boşluk
+          { width: '10%', text: '' },
+          // Sağ: Parayı Alan
+          {
+            width: '45%',
+            stack: [
+              { text: 'Parayı Alan', bold: true, margin: [0, 0, 0, 10] },
+              { text: `"${data.recipientName}"`, margin: [0, 0, 0, 10] },
+              { text: 'İmza:', margin: [0, 0, 0, 5] },
+              {
+                canvas: [
+                  {
+                    type: 'line',
+                    x1: 40,
+                    y1: 0,
+                    x2: 200,
+                    y2: 0,
+                    lineWidth: 0.5
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        margin: [0, 20, 0, 0]
+      }
+    ]
+  };
+
+  // PDF oluştur ve blob olarak döndür
+  return new Promise((resolve, reject) => {
+    try {
+      const pdfDocGenerator = (pdfMake as any).createPdf(docDefinition);
+      pdfDocGenerator.getBlob((blob: Blob) => {
+        resolve(blob);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 /**
  * PDF'i indirir
  */
-export function downloadContractPDF(doc: jsPDF, filename: string) {
-  doc.save(filename);
+export async function downloadContractPDF(pdfBlob: Blob, filename: string) {
+  const url = URL.createObjectURL(pdfBlob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 /**
  * PDF'i yeni sekmede açar (önizleme)
  */
-export function previewContractPDF(doc: jsPDF) {
-  const pdfBlob = doc.output('blob');
+export async function previewContractPDF(pdfBlob: Blob) {
   const pdfUrl = URL.createObjectURL(pdfBlob);
   window.open(pdfUrl, '_blank');
 }
@@ -236,6 +207,17 @@ export function previewContractPDF(doc: jsPDF) {
 /**
  * PDF'i base64 string olarak döndürür (veritabanına kaydetmek için)
  */
-export function getContractPDFBase64(doc: jsPDF): string {
-  return doc.output('dataurlstring');
+export async function getContractPDFBase64(pdfBlob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to convert blob to base64'));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(pdfBlob);
+  });
 }
