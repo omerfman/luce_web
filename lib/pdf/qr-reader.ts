@@ -345,12 +345,15 @@ function parseJSONFormat(data: string): Partial<InvoiceQRData> {
     
     // JSON string içindeki kontrolsüz karakterleri temizle (newline, tab, etc.)
     // Ama string değerlerinin içindeki boşlukları koruyalım
-    const cleanedData = data
+    let cleanedData = data
       .replace(/\n/g, ' ')      // Yeni satırları boşluğa çevir
       .replace(/\r/g, ' ')      // Carriage return'ü boşluğa çevir
       .replace(/\t/g, ' ')      // Tab'ları boşluğa çevir
       .replace(/\s+/g, ' ')     // Çoklu boşlukları tek boşluğa indir
       .trim();                  // Baş ve sondaki boşlukları temizle
+    
+    // Sondaki virgülü temizle: "value",} → "value"}
+    cleanedData = cleanedData.replace(/,(\s*[}\]])/g, '$1');
     
     console.log('Cleaned JSON data:', cleanedData.substring(0, 200));
     
