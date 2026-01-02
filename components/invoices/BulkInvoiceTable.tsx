@@ -86,6 +86,9 @@ export function BulkInvoiceTable({
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[180px]">
               Tedarikçi
             </th>
+            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+              VKN
+            </th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
               Durum
             </th>
@@ -100,6 +103,9 @@ export function BulkInvoiceTable({
             </th>
             <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
               KDV
+            </th>
+            <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+              Tevkifat
             </th>
             <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
               Toplam
@@ -147,6 +153,21 @@ export function BulkInvoiceTable({
                   disabled={item.status === BulkUploadStatus.PROCESSING || item.status === BulkUploadStatus.SUCCESS}
                 />
               </td>
+              <td className="px-3 py-2">
+                <Input
+                  type="text"
+                  value={item.supplier_vkn || item.vkn || ''}
+                  onChange={(e) => {
+                    const vknValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                    handleFieldChange(item, 'supplier_vkn', vknValue);
+                    handleFieldChange(item, 'vkn', vknValue);
+                  }}
+                  placeholder="VKN (10-11 hane)"
+                  className={`text-sm ${!item.supplier_vkn && !item.vkn && !item.isValid ? 'border-red-300' : ''}`}
+                  disabled={item.status === BulkUploadStatus.PROCESSING || item.status === BulkUploadStatus.SUCCESS}
+                  maxLength={11}
+                />
+              </td>
               <td className="px-3 py-2 whitespace-nowrap text-sm">
                 {getStatusBadge(item.status)}
                 {item.error && (
@@ -185,6 +206,15 @@ export function BulkInvoiceTable({
                 <CurrencyInput
                   value={item.vat_amount}
                   onChange={(value) => handleFieldChange(item, 'vat_amount', value)}
+                  placeholder="0,00"
+                  className="text-sm text-right"
+                  disabled={item.status === BulkUploadStatus.PROCESSING || item.status === BulkUploadStatus.SUCCESS}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <CurrencyInput
+                  value={item.withholding_amount}
+                  onChange={(value) => handleFieldChange(item, 'withholding_amount', value)}
                   placeholder="0,00"
                   className="text-sm text-right"
                   disabled={item.status === BulkUploadStatus.PROCESSING || item.status === BulkUploadStatus.SUCCESS}

@@ -275,7 +275,40 @@ npm run start        # Production server
 npm run lint         # ESLint check
 npm run type-check   # TypeScript validation
 npm run format       # Prettier format
+npm run clean:storage # Storage'daki tüm PDF'leri sil
+npm run clean:help   # Temizleme rehberini göster
 ```
+
+---
+
+## 🗑️ Test Verilerini Temizleme
+
+**Gerçek verilerle çalışmaya başlamadan önce tüm test verilerini temizleyin:**
+
+```bash
+# 1. Rehberi oku
+npm run clean:help
+
+# 2. SQL script'i çalıştır (Supabase Dashboard > SQL Editor)
+# scripts/clean-all-test-data.sql
+
+# 3. Storage'ı temizle
+npm run clean:storage
+```
+
+📖 **Detaylı rehber:** [`scripts/CLEAN_TEST_DATA_GUIDE.md`](./scripts/CLEAN_TEST_DATA_GUIDE.md)
+
+**Temizlenecekler:**
+- ✅ Tüm faturalar ve PDF'ler
+- ✅ Tüm ödemeler
+- ✅ İlişkili aktivite logları
+
+**Korunacaklar:**
+- ✅ Kullanıcılar ve roller
+- ✅ Şirket bilgileri
+- ✅ Tedarikçiler ve taşeronlar ✨
+- ✅ Projeler (isteğe bağlı)
+- ✅ Tüm sistem ayarları
 
 ---
 

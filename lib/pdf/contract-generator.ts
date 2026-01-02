@@ -26,6 +26,7 @@ export interface ContractPaymentData {
   amount: number;
   paymentMethod: string;
   createdBy?: string;
+  projectDetails?: Array<{projectName: string, amount: number}>; // Çoklu proje desteği
 }
 
 /**

@@ -1,6 +1,6 @@
 import { BulkInvoiceItem, BulkUploadStatus, InvoiceQRData } from '@/types';
 import { extractQRFromPDF, parseInvoiceQR } from '@/lib/pdf/qr-reader';
-import { getOrCreateSupplier } from '@/lib/supabase/suppliers';
+import { getOrCreateSupplier, updateSupplierNameByVKN } from '@/lib/supabase/suppliers';
 import { numberToTurkishCurrency } from '@/lib/utils';
 
 export interface BulkQRProcessingOptions {
@@ -107,6 +107,7 @@ async function mapQRDataToFormFields(
   // VKN
   if (qrData.taxNumber) {
     item.supplier_vkn = qrData.taxNumber;
+    item.vkn = qrData.taxNumber; // Also set vkn field for consistency
 
     // Try to get supplier name from cache
     try {
@@ -171,6 +172,14 @@ export function validateBulkInvoiceItem(item: BulkInvoiceItem): void {
     errors.push('Tedarikçi adı gerekli');
   }
 
+  // VKN zorunlu (10 veya 11 hane)
+  const vkn = item.supplier_vkn || item.vkn;
+  if (!vkn || !vkn.trim()) {
+    errors.push('VKN gerekli');
+  } else if (!/^\d{10,11}$/.test(vkn.trim())) {
+    errors.push('VKN 10 veya 11 haneli rakam olmalıdır');
+  }
+
   if (!item.amount && !item.goods_services_total) {
     errors.push('Tutar bilgisi gerekli');
   }
@@ -181,12 +190,25 @@ export function validateBulkInvoiceItem(item: BulkInvoiceItem): void {
 
 /**
  * Update supplier name for all items with the same VKN
+ * Also updates the supplier name in the database
  */
-export function bulkUpdateSupplierNameByVKN(
+export async function bulkUpdateSupplierNameByVKN(
   items: BulkInvoiceItem[],
   vkn: string,
-  supplierName: string
-): BulkInvoiceItem[] {
+  supplierName: string,
+  companyId: string
+): Promise<BulkInvoiceItem[]> {
+  // Update in database if name is valid
+  if (vkn && vkn.trim() && supplierName && supplierName.trim() && supplierName !== 'Bilinmeyen Tedarikçi') {
+    try {
+      await updateSupplierNameByVKN(vkn, supplierName, companyId);
+      console.log(`Updated supplier name in DB: ${vkn} -> ${supplierName}`);
+    } catch (error) {
+      console.error('Error updating supplier name in DB:', error);
+    }
+  }
+
+  // Update in items array
   return items.map(item => {
     if (item.supplier_vkn === vkn && vkn.trim()) {
       return {

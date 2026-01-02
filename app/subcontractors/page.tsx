@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Supplier } from '@/types';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { createClient } from '@/lib/supabase/client';
 import {
   getPendingSuppliers,
   getSubcontractorSuppliers,
@@ -65,6 +66,10 @@ export default function SubcontractorsPage() {
   const [stats, setStats] = useState<SupplierStats>({ pending: 0, subcontractor: 0, invoice_company: 0, total: 0, active: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+  
+  // Inline editing state
+  const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<{ name: string; vkn: string; phone?: string; email?: string; }>({ name: '', vkn: '', phone: '', email: '' });
   
   // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -167,6 +172,107 @@ export default function SubcontractorsPage() {
     }
   };
 
+  // Toplu silme işlemi
+  const handleBulkDelete = async () => {
+    if (!user?.company_id || selectedSuppliers.length === 0) return;
+    
+    const confirmed = confirm(
+      `${selectedSuppliers.length} firmayı silmek istediğinizden emin misiniz?\n\n` +
+      `⚠️ DİKKAT: Faturalarda kullanılan firmalar silinemez ve deaktif edilir.`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      setLoading(true);
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const supplierId of selectedSuppliers) {
+        try {
+          await deleteSupplier(supplierId, user.company_id);
+          successCount++;
+        } catch (error) {
+          console.error(`Error deleting supplier ${supplierId}:`, error);
+          errorCount++;
+        }
+      }
+      
+      if (errorCount === 0) {
+        alert(`✅ ${successCount} firma başarıyla silindi!`);
+      } else {
+        alert(`⚠️ ${successCount} firma silindi, ${errorCount} firma silinemedi (faturalarda kullanılıyor olabilir)`);
+      }
+      
+      setSelectedSuppliers([]);
+      loadData();
+    } catch (error: any) {
+      console.error('Error bulk deleting:', error);
+      alert('❌ Toplu silme sırasında hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Inline editing başlat
+  const startEdit = (supplier: Supplier) => {
+    setEditingSupplier(supplier.id);
+    setEditFormData({
+      name: supplier.name,
+      vkn: supplier.vkn || '',
+      phone: supplier.phone || '',
+      email: supplier.email || '',
+    });
+  };
+
+  // Inline editing iptal
+  const cancelEdit = () => {
+    setEditingSupplier(null);
+    setEditFormData({ name: '', vkn: '', phone: '', email: '' });
+  };
+
+  // Inline editing kaydet
+  const saveEdit = async (supplierId: string) => {
+    if (!user?.company_id) return;
+    
+    if (!editFormData.name.trim()) {
+      alert('Firma adı zorunludur!');
+      return;
+    }
+
+    if (editFormData.vkn.trim() && !/^\d{10,11}$/.test(editFormData.vkn.trim())) {
+      alert('⚠️ VKN 10 veya 11 haneli rakam olmalıdır!');
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { error } = await (supabase
+        .from('suppliers') as any)
+        .update({
+          name: editFormData.name.trim(),
+          vkn: editFormData.vkn.trim() || null,
+          phone: editFormData.phone?.trim() || null,
+          email: editFormData.email?.trim() || null,
+        })
+        .eq('id', supplierId)
+        .eq('company_id', user.company_id);
+
+      if (error) throw error;
+
+      alert('✅ Firma bilgileri güncellendi!');
+      setEditingSupplier(null);
+      loadData();
+    } catch (error: any) {
+      console.error('Error updating supplier:', error);
+      if (error.code === '23505') {
+        alert('⚠️ Bu VKN zaten kayıtlı!');
+      } else {
+        alert('❌ Güncellenirken hata oluştu: ' + (error.message || 'Bilinmeyen hata'));
+      }
+    }
+  };
+
   // Checkbox işlemleri
   const handleCheckboxChange = (supplierId: string) => {
     setSelectedSuppliers(prev => 
@@ -174,16 +280,6 @@ export default function SubcontractorsPage() {
         ? prev.filter(id => id !== supplierId)
         : [...prev, supplierId]
     );
-  };
-
-  const handleSelectAll = () => {
-    if (activeTab === 'pending') {
-      setSelectedSuppliers(
-        selectedSuppliers.length === pendingSuppliers.length 
-          ? [] 
-          : pendingSuppliers.map(s => s.id)
-      );
-    }
   };
 
   // Manuel ekleme
@@ -283,22 +379,29 @@ export default function SubcontractorsPage() {
     }
 
     return (
-      <div>
+      <div className="space-y-4">
         {/* Toplu işlem butonları */}
         {selectedSuppliers.length > 0 && (
-          <div className="mb-4 flex gap-2 rounded-lg bg-blue-50 p-4">
-            <span className="text-sm text-secondary-700">
+          <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
+            <span className="text-sm font-medium text-amber-800">
               {selectedSuppliers.length} firma seçildi
             </span>
-            <button
-              onClick={() => {
-                // Toplu atama modalını aç
-                alert('Toplu atama özelliği yakında eklenecek');
-              }}
-              className="ml-auto btn-sm btn-primary"
-            >
-              Toplu Ata
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  alert('Toplu atama özelliği yakında eklenecek');
+                }}
+                className="btn-sm btn-primary"
+              >
+                Toplu Ata
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="btn-sm btn-danger"
+              >
+                Seçilenleri Sil
+              </button>
+            </div>
           </div>
         )}
 
@@ -310,13 +413,20 @@ export default function SubcontractorsPage() {
                   <th className="table-header w-12">
                     <input
                       type="checkbox"
-                      checked={selectedSuppliers.length === pendingSuppliers.length}
-                      onChange={handleSelectAll}
+                      checked={selectedSuppliers.length === pendingSuppliers.length && pendingSuppliers.length > 0}
+                      onChange={() => {
+                        if (selectedSuppliers.length === pendingSuppliers.length) {
+                          setSelectedSuppliers([]);
+                        } else {
+                          setSelectedSuppliers(pendingSuppliers.map(s => s.id));
+                        }
+                      }}
                       className="rounded border-secondary-300"
                     />
                   </th>
                   <th className="table-header">Firma Adı</th>
                   <th className="table-header">VKN</th>
+                  <th className="table-header">İletişim</th>
                   <th className="table-header">Eklenme Tarihi</th>
                   <th className="table-header text-right">İşlem</th>
                 </tr>
@@ -332,29 +442,126 @@ export default function SubcontractorsPage() {
                         className="rounded border-secondary-300"
                       />
                     </td>
-                    <td className="table-cell font-medium">{supplier.name}</td>
-                    <td className="table-cell text-secondary-600">{supplier.vkn}</td>
+                    <td className="table-cell font-medium">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.name}
+                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="Firma adı"
+                        />
+                      ) : (
+                        supplier.name
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.vkn}
+                          onChange={(e) => setEditFormData({ ...editFormData, vkn: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="VKN (10-11 hane)"
+                          maxLength={11}
+                        />
+                      ) : (
+                        supplier.vkn
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">
+                      {editingSupplier === supplier.id ? (
+                        <div className="space-y-1">
+                          <input
+                            type="tel"
+                            value={editFormData.phone}
+                            onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="Telefon"
+                          />
+                          <input
+                            type="email"
+                            value={editFormData.email}
+                            onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-xs focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="E-posta"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          {supplier.phone && <div>{supplier.phone}</div>}
+                          {supplier.email && <div className="text-xs">{supplier.email}</div>}
+                        </>
+                      )}
+                    </td>
                     <td className="table-cell text-secondary-600">
                       {new Date(supplier.created_at).toLocaleDateString('tr-TR')}
                     </td>
                     <td className="table-cell text-right">
                       <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => handleAssign(supplier.id, 'subcontractor')}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                          title="Taşeron olarak ata"
-                        >
-                          <UserGroupIcon className="h-4 w-4" />
-                          Taşeron
-                        </button>
-                        <button
-                          onClick={() => handleAssign(supplier.id, 'invoice_company')}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                          title="Fatura firması olarak ata"
-                        >
-                          <DocumentIcon className="h-4 w-4" />
-                          Fatura Firması
-                        </button>
+                        {editingSupplier === supplier.id ? (
+                          <>
+                            <button
+                              onClick={() => saveEdit(supplier.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-all hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                              title="Kaydet"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              Kaydet
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-secondary-200 px-3 py-1.5 text-sm font-medium text-secondary-700 transition-all hover:bg-secondary-300 focus:outline-none focus:ring-2 focus:ring-secondary-500"
+                              title="İptal"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              İptal
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => startEdit(supplier)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Düzenle"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Düzenle
+                            </button>
+                            <button
+                              onClick={() => handleAssign(supplier.id, 'subcontractor')}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Taşeron olarak ata"
+                            >
+                              <UserGroupIcon className="h-4 w-4" />
+                              Taşeron
+                            </button>
+                            <button
+                              onClick={() => handleAssign(supplier.id, 'invoice_company')}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-green-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                              title="Fatura firması olarak ata"
+                            >
+                              <DocumentIcon className="h-4 w-4" />
+                              Fatura Firması
+                            </button>
+                            <button
+                              onClick={() => handleDelete(supplier.id, supplier.name)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                              title="Firmayı sil"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Sil
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -382,60 +589,181 @@ export default function SubcontractorsPage() {
     }
 
     return (
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-secondary-200">
-            <thead className="bg-secondary-50">
-              <tr>
-                <th className="table-header">Taşeron Adı</th>
-                <th className="table-header">VKN</th>
-                <th className="table-header">İletişim</th>
-                <th className="table-header">Durum</th>
-                <th className="table-header text-right">İşlem</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-secondary-200 bg-white">
-              {subcontractorSuppliers.map((supplier) => (
-                <tr key={supplier.id} className="hover:bg-secondary-50">
-                  <td className="table-cell font-medium">{supplier.name}</td>
-                  <td className="table-cell text-secondary-600">{supplier.vkn}</td>
-                  <td className="table-cell text-secondary-600">
-                    {supplier.phone && <div>{supplier.phone}</div>}
-                    {supplier.email && <div className="text-xs">{supplier.email}</div>}
-                  </td>
-                  <td className="table-cell">
-                    <span className={`badge ${supplier.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                      {supplier.is_active ? 'Aktif' : 'Pasif'}
-                    </span>
-                  </td>
-                  <td className="table-cell text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleUnassign(supplier.id)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
-                        title="Atamayı kaldır (pending'e geri döner)"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        Kaldır
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier.id, supplier.name)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                        title="Firmayı sil"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Sil
-                      </button>
-                    </div>
-                  </td>
+      <div className="space-y-4">
+        {selectedSuppliers.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
+            <span className="text-sm font-medium text-amber-800">
+              {selectedSuppliers.length} firma seçildi
+            </span>
+            <button
+              onClick={handleBulkDelete}
+              className="btn-sm btn-danger"
+            >
+              Seçilenleri Sil
+            </button>
+          </div>
+        )}
+
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-secondary-200">
+              <thead className="bg-secondary-50">
+                <tr>
+                  <th className="table-header w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectedSuppliers.length === subcontractorSuppliers.length}
+                      onChange={() => {
+                        if (selectedSuppliers.length === subcontractorSuppliers.length) {
+                          setSelectedSuppliers([]);
+                        } else {
+                          setSelectedSuppliers(subcontractorSuppliers.map(s => s.id));
+                        }
+                      }}
+                      className="rounded border-secondary-300"
+                    />
+                  </th>
+                  <th className="table-header">Taşeron Adı</th>
+                  <th className="table-header">VKN</th>
+                  <th className="table-header">İletişim</th>
+                  <th className="table-header">Durum</th>
+                  <th className="table-header text-right">İşlem</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-secondary-200 bg-white">
+                {subcontractorSuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover:bg-secondary-50">
+                    <td className="table-cell">
+                      <input
+                        type="checkbox"
+                        checked={selectedSuppliers.includes(supplier.id)}
+                        onChange={() => handleCheckboxChange(supplier.id)}
+                        className="rounded border-secondary-300"
+                      />
+                    </td>
+                    <td className="table-cell font-medium">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.name}
+                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="Firma adı"
+                        />
+                      ) : (
+                        supplier.name
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.vkn}
+                          onChange={(e) => setEditFormData({ ...editFormData, vkn: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="VKN (10-11 hane)"
+                          maxLength={11}
+                        />
+                      ) : (
+                        supplier.vkn
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">
+                      {editingSupplier === supplier.id ? (
+                        <div className="space-y-1">
+                          <input
+                            type="tel"
+                            value={editFormData.phone}
+                            onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="Telefon"
+                          />
+                          <input
+                            type="email"
+                            value={editFormData.email}
+                            onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-xs focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="E-posta"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          {supplier.phone && <div>{supplier.phone}</div>}
+                          {supplier.email && <div className="text-xs">{supplier.email}</div>}
+                        </>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      <span className={`badge ${supplier.is_active ? 'badge-success' : 'badge-secondary'}`}>
+                        {supplier.is_active ? 'Aktif' : 'Pasif'}
+                      </span>
+                    </td>
+                    <td className="table-cell text-right">
+                      <div className="flex justify-end gap-2">
+                        {editingSupplier === supplier.id ? (
+                          <>
+                            <button
+                              onClick={() => saveEdit(supplier.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-all hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                              title="Kaydet"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              Kaydet
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-secondary-200 px-3 py-1.5 text-sm font-medium text-secondary-700 transition-all hover:bg-secondary-300 focus:outline-none focus:ring-2 focus:ring-secondary-500"
+                              title="İptal"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              İptal
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => startEdit(supplier)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Düzenle"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Düzenle
+                            </button>
+                            <button
+                              onClick={() => handleUnassign(supplier.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              title="Atamayı kaldır (pending'e geri döner)"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                              </svg>
+                              Kaldır
+                            </button>
+                            <button
+                              onClick={() => handleDelete(supplier.id, supplier.name)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                              title="Firmayı sil"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Sil
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -456,57 +784,157 @@ export default function SubcontractorsPage() {
     }
 
     return (
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-secondary-200">
-            <thead className="bg-secondary-50">
-              <tr>
-                <th className="table-header">Firma Adı</th>
-                <th className="table-header">VKN</th>
-                <th className="table-header">Vergi Dairesi</th>
-                <th className="table-header">Durum</th>
-                <th className="table-header text-right">İşlem</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-secondary-200 bg-white">
-              {invoiceCompanySuppliers.map((supplier) => (
-                <tr key={supplier.id} className="hover:bg-secondary-50">
-                  <td className="table-cell font-medium">{supplier.name}</td>
-                  <td className="table-cell text-secondary-600">{supplier.vkn}</td>
-                  <td className="table-cell text-secondary-600">{supplier.tax_office || '-'}</td>
-                  <td className="table-cell">
-                    <span className={`badge ${supplier.is_active ? 'badge-success' : 'badge-secondary'}`}>
-                      {supplier.is_active ? 'Aktif' : 'Pasif'}
-                    </span>
-                  </td>
-                  <td className="table-cell text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleUnassign(supplier.id)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
-                        title="Atamayı kaldır (pending'e geri döner)"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        Kaldır
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier.id, supplier.name)}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                        title="Firmayı sil"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Sil
-                      </button>
-                    </div>
-                  </td>
+      <div className="space-y-4">
+        {selectedSuppliers.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
+            <span className="text-sm font-medium text-amber-800">
+              {selectedSuppliers.length} firma seçildi
+            </span>
+            <button
+              onClick={handleBulkDelete}
+              className="btn-sm btn-danger"
+            >
+              Seçilenleri Sil
+            </button>
+          </div>
+        )}
+
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-secondary-200">
+              <thead className="bg-secondary-50">
+                <tr>
+                  <th className="table-header w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectedSuppliers.length === invoiceCompanySuppliers.length}
+                      onChange={() => {
+                        if (selectedSuppliers.length === invoiceCompanySuppliers.length) {
+                          setSelectedSuppliers([]);
+                        } else {
+                          setSelectedSuppliers(invoiceCompanySuppliers.map(s => s.id));
+                        }
+                      }}
+                      className="rounded border-secondary-300"
+                    />
+                  </th>
+                  <th className="table-header">Firma Adı</th>
+                  <th className="table-header">VKN</th>
+                  <th className="table-header">Vergi Dairesi</th>
+                  <th className="table-header">Durum</th>
+                  <th className="table-header text-right">İşlem</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-secondary-200 bg-white">
+                {invoiceCompanySuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover:bg-secondary-50">
+                    <td className="table-cell">
+                      <input
+                        type="checkbox"
+                        checked={selectedSuppliers.includes(supplier.id)}
+                        onChange={() => handleCheckboxChange(supplier.id)}
+                        className="rounded border-secondary-300"
+                      />
+                    </td>
+                    <td className="table-cell font-medium">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.name}
+                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="Firma adı"
+                        />
+                      ) : (
+                        supplier.name
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">
+                      {editingSupplier === supplier.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.vkn}
+                          onChange={(e) => setEditFormData({ ...editFormData, vkn: e.target.value })}
+                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          placeholder="VKN (10-11 hane)"
+                          maxLength={11}
+                        />
+                      ) : (
+                        supplier.vkn
+                      )}
+                    </td>
+                    <td className="table-cell text-secondary-600">{supplier.tax_office || '-'}</td>
+                    <td className="table-cell">
+                      <span className={`badge ${supplier.is_active ? 'badge-success' : 'badge-secondary'}`}>
+                        {supplier.is_active ? 'Aktif' : 'Pasif'}
+                      </span>
+                    </td>
+                    <td className="table-cell text-right">
+                      <div className="flex justify-end gap-2">
+                        {editingSupplier === supplier.id ? (
+                          <>
+                            <button
+                              onClick={() => saveEdit(supplier.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-all hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                              title="Kaydet"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              Kaydet
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-secondary-200 px-3 py-1.5 text-sm font-medium text-secondary-700 transition-all hover:bg-secondary-300 focus:outline-none focus:ring-2 focus:ring-secondary-500"
+                              title="İptal"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              İptal
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => startEdit(supplier)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Düzenle"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Düzenle
+                            </button>
+                            <button
+                              onClick={() => handleUnassign(supplier.id)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              title="Atamayı kaldır (pending'e geri döner)"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                              </svg>
+                              Kaldır
+                            </button>
+                            <button
+                              onClick={() => handleDelete(supplier.id, supplier.name)}
+                              className="inline-flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700 transition-all hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                              title="Firmayı sil"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Sil
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );

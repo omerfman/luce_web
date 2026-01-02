@@ -10,7 +10,7 @@ import {
   updateInformalPayment,
   deleteInformalPayment,
 } from '@/lib/supabase/informal-payments';
-import { getSubcontractorSuppliers } from '@/lib/supabase/supplier-management';
+import { getSubcontractorSuppliers, createSubcontractor } from '@/lib/supabase/supplier-management';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
@@ -27,7 +27,7 @@ export default function InformalPaymentsPage() {
   
   // Filters
   const [filters, setFilters] = useState({
-    subcontractorId: '',
+    supplierId: '',
     projectId: '',
     startDate: '',
     endDate: '',
@@ -89,7 +89,7 @@ export default function InformalPaymentsPage() {
 
   const handleClearFilters = () => {
     setFilters({
-      subcontractorId: '',
+      supplierId: '',
       projectId: '',
       startDate: '',
       endDate: '',
@@ -210,8 +210,8 @@ export default function InformalPaymentsPage() {
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">Taşeron</label>
             <select
-              value={filters.subcontractorId}
-              onChange={(e) => setFilters({ ...filters, subcontractorId: e.target.value })}
+              value={filters.supplierId}
+              onChange={(e) => setFilters({ ...filters, supplierId: e.target.value })}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
             >
               <option value="">Tümü</option>
@@ -424,6 +424,12 @@ interface PaymentModalProps {
 }
 
 function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: PaymentModalProps) {
+  const { user } = useAuth();
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierVkn, setNewSupplierVkn] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [formData, setFormData] = useState({
     supplier_id: payment?.supplier_id || '',
     project_id: payment?.project_id || '',
@@ -435,28 +441,64 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
     notes: payment?.notes || '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate required fields
-    if (!formData.supplier_id) {
-      alert('Lütfen taşeron seçiniz');
-      return;
-    }
-    if (!formData.amount || Number(formData.amount) <= 0) {
-      alert('Lütfen geçerli bir tutar giriniz');
-      return;
-    }
-    if (!formData.description) {
-      alert('Lütfen açıklama giriniz');
-      return;
-    }
+    if (isSubmitting) return;
+    
+    try {
+      setIsSubmitting(true);
+      
+      let supplierId = formData.supplier_id;
+      
+      // Eğer yeni kişi/firma ekleme aktifse
+      if (isCreatingNew) {
+        if (!newSupplierName.trim()) {
+          alert('Lütfen kişi/firma adını giriniz');
+          return;
+        }
+        
+        if (!user?.company_id) {
+          alert('Kullanıcı bilgisi bulunamadı');
+          return;
+        }
+        
+        // Yeni supplier oluştur
+        const newSupplier = await createSubcontractor(
+          user.company_id,
+          newSupplierName.trim(),
+          newSupplierVkn.trim() || undefined
+        );
+        
+        supplierId = newSupplier.id;
+      }
+      
+      // Validate required fields
+      if (!supplierId) {
+        alert('Lütfen taşeron seçiniz veya yeni kişi/firma ekleyiniz');
+        return;
+      }
+      if (!formData.amount || Number(formData.amount) <= 0) {
+        alert('Lütfen geçerli bir tutar giriniz');
+        return;
+      }
+      if (!formData.description) {
+        alert('Lütfen açıklama giriniz');
+        return;
+      }
 
-    onSubmit({
-      ...formData,
-      project_id: formData.project_id || null,
-      amount: Number(formData.amount),
-    });
+      onSubmit({
+        ...formData,
+        supplier_id: supplierId,
+        project_id: formData.project_id || null,
+        amount: Number(formData.amount),
+      });
+    } catch (error: any) {
+      console.error('Error creating payment:', error);
+      alert(error.message || 'Ödeme eklenirken hata oluştu');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -472,23 +514,78 @@ function PaymentModal({ payment, subcontractors, projects, onClose, onSubmit }: 
         </div>
 
         <form onSubmit={handleSubmit} className="modal-body space-y-5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Taşeron <span className="text-red-500">*</span></label>
-              <select
-                required
-                value={formData.supplier_id}
-                onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              >
-                <option value="">Seçiniz</option>
-                {subcontractors.map((sub) => (
-                  <option key={sub.id} value={sub.id}>
-                    {sub.name}
-                  </option>
-                ))}
-              </select>
+          {/* Yeni Kişi/Firma Ekleme Checkbox */}
+          <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <input
+              type="checkbox"
+              id="createNew"
+              checked={isCreatingNew}
+              onChange={(e) => {
+                setIsCreatingNew(e.target.checked);
+                if (e.target.checked) {
+                  setFormData({ ...formData, supplier_id: '' });
+                }
+              }}
+              disabled={!!payment}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="createNew" className="text-sm font-medium text-blue-900 cursor-pointer select-none">
+              Yeni Kişi/Firma Ekle
+            </label>
+          </div>
+          
+          {/* Yeni Kişi/Firma Bilgileri (checkbox işaretlendiğinde gösterilir) */}
+          {isCreatingNew && (
+            <div className="grid grid-cols-1 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Kişi/Firma Adı <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required={isCreatingNew}
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  placeholder="Örn: Ali Veli veya ABC İnşaat"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  VKN/TCKN (Opsiyonel)
+                </label>
+                <input
+                  type="text"
+                  value={newSupplierVkn}
+                  onChange={(e) => setNewSupplierVkn(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  placeholder="10 veya 11 haneli"
+                  maxLength={11}
+                />
+              </div>
             </div>
+          )}
+          
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Taşeron Seçimi (checkbox işaretli değilse gösterilir) */}
+            {!isCreatingNew && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Taşeron <span className="text-red-500">*</span></label>
+                <select
+                  required={!isCreatingNew}
+                  value={formData.supplier_id}
+                  onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                >
+                  <option value="">Seçiniz</option>
+                  {subcontractors.map((sub) => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Proje (Opsiyonel)</label>

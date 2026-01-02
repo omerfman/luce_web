@@ -88,15 +88,17 @@ export default function BulkInvoicesPage() {
     setItems(prevItems => prevItems.filter(item => item.id !== id));
   }
 
-  function handleSupplierNameChange(vkn: string, supplierName: string) {
-    setItems(prevItems => {
-      const updated = bulkUpdateSupplierNameByVKN(prevItems, vkn, supplierName);
-      // Revalidate all updated items
-      return updated.map(item => {
-        validateBulkInvoiceItem(item);
-        return item;
-      });
-    });
+  async function handleSupplierNameChange(vkn: string, supplierName: string) {
+    if (!company) return;
+    
+    // First update in database
+    const updated = await bulkUpdateSupplierNameByVKN(items, vkn, supplierName, company.id);
+    
+    // Then update state with revalidation
+    setItems(updated.map(item => {
+      validateBulkInvoiceItem(item);
+      return item;
+    }));
   }
 
   async function handleSubmit() {
@@ -133,11 +135,11 @@ export default function BulkInvoicesPage() {
             }
           }
 
-          // 2. Create or get supplier
+          // 2. Create or get supplier and update name if needed
           let supplierId: string | null = null;
           if (item.vkn && item.supplier_name) {
             try {
-              const supplier = await getOrCreateSupplier(company.id, item.vkn, item.supplier_name);
+              const supplier = await getOrCreateSupplier(item.vkn, item.supplier_name, company.id);
               if (supplier) {
                 supplierId = supplier.id;
               }

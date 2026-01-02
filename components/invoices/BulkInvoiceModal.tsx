@@ -94,15 +94,15 @@ export function BulkInvoiceModal({
     setItems(prevItems => prevItems.filter(item => item.id !== id));
   }
 
-  function handleSupplierNameChange(vkn: string, supplierName: string) {
-    setItems(prevItems => {
-      const updated = bulkUpdateSupplierNameByVKN(prevItems, vkn, supplierName);
-      // Revalidate all updated items
-      return updated.map(item => {
-        validateBulkInvoiceItem(item);
-        return item;
-      });
-    });
+  async function handleSupplierNameChange(vkn: string, supplierName: string) {
+    // First update in database
+    const updated = await bulkUpdateSupplierNameByVKN(items, vkn, supplierName, companyId);
+    
+    // Then update state with revalidation
+    setItems(updated.map(item => {
+      validateBulkInvoiceItem(item);
+      return item;
+    }));
   }
 
   async function handleSubmit() {

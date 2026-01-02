@@ -39,7 +39,7 @@ export default function InvoicesPage() {
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [showFilters, setShowFilters] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
-  const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string}>>([{type: '', amount: ''}]);
+  const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string, payment_date: string}>>([{type: '', amount: '', payment_date: ''}]);
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
@@ -54,6 +54,7 @@ export default function InvoicesPage() {
     invoice_number: '',
     description: '',
     supplier_name: '',
+    supplier_vkn: '',
     goods_services_total: '',
     vat_amount: '',
     withholding_amount: '',
@@ -208,20 +209,20 @@ export default function InvoicesPage() {
 
   function openPaymentModal(invoice: Invoice) {
     setSelectedInvoice(invoice);
-    setSelectedPaymentTypes([{type: '', amount: ''}]);
+    setSelectedPaymentTypes([{type: '', amount: '', payment_date: ''}]);
     loadPayments(invoice.id);
     setIsPaymentModalOpen(true);
   }
 
   function addPaymentType() {
-    setSelectedPaymentTypes([...selectedPaymentTypes, {type: '', amount: ''}]);
+    setSelectedPaymentTypes([...selectedPaymentTypes, {type: '', amount: '', payment_date: ''}]);
   }
 
   function removePaymentType(index: number) {
     setSelectedPaymentTypes(selectedPaymentTypes.filter((_, i) => i !== index));
   }
 
-  function updatePaymentType(index: number, field: 'type' | 'amount', value: string) {
+  function updatePaymentType(index: number, field: 'type' | 'amount' | 'payment_date', value: string) {
     const updated = [...selectedPaymentTypes];
     updated[index][field] = value;
     setSelectedPaymentTypes(updated);
@@ -272,7 +273,8 @@ export default function InvoicesPage() {
         payment_type: p.type,
         // Tutar boşsa gerçek kalan tutarı kullan
         amount: p.amount ? parseCurrencyInput(p.amount) : remainingAmount,
-        payment_date: new Date().toISOString().split('T')[0],
+        // Tarih boşsa bugünün tarihini kullan
+        payment_date: p.payment_date || new Date().toISOString().split('T')[0],
         created_by: user!.id,
       }));
 
@@ -332,6 +334,7 @@ export default function InvoicesPage() {
       invoice_number: '',
       description: '',
       supplier_name: '',
+      supplier_vkn: '',
       goods_services_total: '',
       vat_amount: '',
       withholding_amount: '',
@@ -353,6 +356,10 @@ export default function InvoicesPage() {
     
     if (qrData.supplierName) {
       updates.supplier_name = qrData.supplierName;
+    }
+    
+    if (qrData.taxNumber) {
+      updates.supplier_vkn = qrData.taxNumber;
     }
     
     if (qrData.goodsServicesTotal !== undefined) {
@@ -379,11 +386,11 @@ export default function InvoicesPage() {
     }
     
     // Auto-fill supplier name from VKN if available
-    if (qrData.taxNumber && !qrData.supplierName && company) {
+    if (qrData.taxNumber && company) {
       console.log('VKN found, looking up supplier:', qrData.taxNumber);
       
       // Async lookup - don't block the form update
-      getOrCreateSupplier(qrData.taxNumber, 'Bilinmeyen Tedarikçi', company.id)
+      getOrCreateSupplier(qrData.taxNumber, qrData.supplierName || 'Bilinmeyen Tedarikçi', company.id)
         .then(supplier => {
           if (supplier && supplier.name && supplier.name !== 'Bilinmeyen Tedarikçi') {
             console.log('Supplier found from cache:', supplier.name);
@@ -391,18 +398,25 @@ export default function InvoicesPage() {
               ...prev,
               supplier_name: supplier.name
             }));
-          } else if (supplier) {
-            console.log('Supplier VKN cached, but name unknown - manual entry required');
-            // Store supplier ID for later update
+          } else if (qrData.supplierName) {
+            console.log('Using supplier name from QR:', qrData.supplierName);
             setFormData(prev => ({
               ...prev,
-              supplier_name: '' // Leave empty for manual entry
+              supplier_name: qrData.supplierName || ''
             }));
           }
         })
         .catch(err => {
           console.error('Error looking up supplier:', err);
+          if (qrData.supplierName) {
+            setFormData(prev => ({
+              ...prev,
+              supplier_name: qrData.supplierName || ''
+            }));
+          }
         });
+    } else if (qrData.supplierName) {
+      updates.supplier_name = qrData.supplierName;
     }
     
     // Update form data
@@ -419,6 +433,17 @@ export default function InvoicesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedFile || !company) return;
+
+    // VKN validation
+    if (!formData.supplier_vkn || !formData.supplier_vkn.trim()) {
+      alert('⚠️ VKN (Vergi Kimlik Numarası) zorunludur!');
+      return;
+    }
+
+    if (!/^\d{10,11}$/.test(formData.supplier_vkn.trim())) {
+      alert('⚠️ VKN 10 veya 11 haneli rakam olmalıdır!');
+      return;
+    }
 
     setIsUploading(true);
 
@@ -461,8 +486,8 @@ export default function InvoicesPage() {
         goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
         vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
         withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
-        // QR metadata (eğer QR okuduysa)
-        supplier_vkn: qrMetadata?.taxNumber || null,
+        // VKN (QR'dan veya manuel girişten)
+        supplier_vkn: formData.supplier_vkn || qrMetadata?.taxNumber || null,
         buyer_vkn: qrMetadata?.buyerVKN || null,
         invoice_scenario: qrMetadata?.scenario || null,
         invoice_type: qrMetadata?.type || null,
@@ -473,21 +498,19 @@ export default function InvoicesPage() {
       if (error) throw error;
 
       // Update supplier name in cache if we have VKN and a real name
-      if (qrMetadata?.taxNumber && formData.supplier_name && formData.supplier_name !== 'Bilinmeyen Tedarikçi') {
+      const vknToUse = formData.supplier_vkn || qrMetadata?.taxNumber;
+      if (vknToUse && formData.supplier_name && formData.supplier_name !== 'Bilinmeyen Tedarikçi') {
         console.log('Updating supplier cache with name:', formData.supplier_name);
         
-        // Update supplier name in cache (async, don't wait)
-        supabase
-          .from('suppliers')
-          .update({ name: formData.supplier_name })
-          .eq('company_id', company.id)
-          .eq('vkn', qrMetadata.taxNumber)
-          .then(({ error: updateError }) => {
-            if (updateError) {
-              console.error('Error updating supplier name:', updateError);
-            } else {
-              console.log('✅ Supplier name updated in cache');
+        // Create or update supplier (VKN zorunlu)
+        getOrCreateSupplier(vknToUse, formData.supplier_name, company.id)
+          .then(supplier => {
+            if (supplier) {
+              console.log('✅ Supplier created/updated in cache');
             }
+          })
+          .catch(err => {
+            console.error('Error creating/updating supplier:', err);
           });
       }
 
@@ -497,6 +520,7 @@ export default function InvoicesPage() {
         invoice_number: '',
         description: '',
         supplier_name: '',
+        supplier_vkn: '',
         goods_services_total: '',
         vat_amount: '',
         withholding_amount: '',
@@ -527,6 +551,7 @@ export default function InvoicesPage() {
       invoice_number: invoice.invoice_number,
       description: invoice.description || '',
       supplier_name: invoice.supplier_name || '',
+      supplier_vkn: invoice.supplier_vkn || '',
       goods_services_total: invoice.goods_services_total ? invoice.goods_services_total.toString().replace('.', ',') : '',
       vat_amount: invoice.vat_amount ? invoice.vat_amount.toString().replace('.', ',') : '',
       withholding_amount: invoice.withholding_amount ? invoice.withholding_amount.toString().replace('.', ',') : '',
@@ -549,6 +574,7 @@ export default function InvoicesPage() {
           invoice_number: formData.invoice_number,
           description: formData.description,
           supplier_name: formData.supplier_name || null,
+          supplier_vkn: formData.supplier_vkn || null,
           goods_services_total: formData.goods_services_total ? parseCurrencyInput(formData.goods_services_total) : null,
           vat_amount: formData.vat_amount ? parseCurrencyInput(formData.vat_amount) : null,
           withholding_amount: formData.withholding_amount ? parseCurrencyInput(formData.withholding_amount) : null,
@@ -563,6 +589,7 @@ export default function InvoicesPage() {
         invoice_number: '',
         description: '',
         supplier_name: '',
+        supplier_vkn: '',
         goods_services_total: '',
         vat_amount: '',
         withholding_amount: '',
@@ -1137,6 +1164,7 @@ export default function InvoicesPage() {
                 invoice_number: '',
                 description: '',
                 supplier_name: '',
+                supplier_vkn: '',
                 goods_services_total: '',
                 vat_amount: '',
                 withholding_amount: '',
@@ -1149,12 +1177,26 @@ export default function InvoicesPage() {
           {/* Firma Bilgileri */}
           <div className="border-t pt-4">
             <h3 className="text-sm font-medium text-secondary-700 mb-3">Firma Bilgileri</h3>
-            <Input
-              label="Fatura Firma Adı"
-              value={formData.supplier_name}
-              onChange={(e) => setFormData({ ...formData, supplier_name: e.target.value })}
-              placeholder="Tedarikçi firma adı"
-            />
+            <div className="grid gap-4">
+              <Input
+                label="Fatura Firma Adı"
+                value={formData.supplier_name}
+                onChange={(e) => setFormData({ ...formData, supplier_name: e.target.value })}
+                placeholder="Tedarikçi firma adı"
+                required
+              />
+              <Input
+                label="VKN (Vergi Kimlik Numarası)"
+                value={formData.supplier_vkn}
+                onChange={(e) => {
+                  const vknValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                  setFormData({ ...formData, supplier_vkn: vknValue });
+                }}
+                placeholder="10 veya 11 haneli VKN"
+                required
+                maxLength={11}
+              />
+            </div>
           </div>
 
           {/* Fatura Detayları */}
@@ -1249,12 +1291,26 @@ export default function InvoicesPage() {
           {/* Firma Bilgileri */}
           <div>
             <h3 className="text-sm font-semibold text-secondary-900 mb-3">Firma Bilgileri</h3>
-            <Input
-              label="Tedarikçi/Firma Adı"
-              value={formData.supplier_name}
-              onChange={(e) => setFormData({ ...formData, supplier_name: e.target.value })}
-              placeholder="Örn: ABC İnşaat Ltd. Şti."
-            />
+            <div className="grid gap-4">
+              <Input
+                label="Tedarikçi/Firma Adı"
+                value={formData.supplier_name}
+                onChange={(e) => setFormData({ ...formData, supplier_name: e.target.value })}
+                placeholder="Tedarikçi firma adı"
+                required
+              />
+              <Input
+                label="VKN (Vergi Kimlik Numarası)"
+                value={formData.supplier_vkn}
+                onChange={(e) => {
+                  const vknValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                  setFormData({ ...formData, supplier_vkn: vknValue });
+                }}
+                placeholder="10 veya 11 haneli VKN"
+                required
+                maxLength={11}
+              />
+            </div>
           </div>
 
           {/* Fatura Detayları */}
@@ -1501,6 +1557,18 @@ export default function InvoicesPage() {
                     onChange={(value) => updatePaymentType(index, 'amount', value)}
                     placeholder="Boş bırakırsanız kalan tutar eklenir"
                   />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">
+                    Ödeme Tarihi
+                  </label>
+                  <input
+                    type="date"
+                    value={payment.payment_date}
+                    onChange={(e) => updatePaymentType(index, 'payment_date', e.target.value)}
+                    className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="text-xs text-secondary-500 mt-1">Boş bırakırsanız bugünün tarihi kullanılır</p>
                 </div>
                 {selectedPaymentTypes.length > 1 && (
                   <button

@@ -31,8 +31,8 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
   const [newSubcontractorName, setNewSubcontractorName] = useState('');
   const [isNewSubcontractor, setIsNewSubcontractor] = useState(false);
   const [jobDescription, setJobDescription] = useState('');
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [amount, setAmount] = useState<string>('');
+  // Çoklu proje ödemeleri için array
+  const [projectPayments, setProjectPayments] = useState<Array<{projectId: string, amount: string}>>([{projectId: '', amount: ''}]);
   const [paymentMethod, setPaymentMethod] = useState<'Kasadan Nakit' | 'Kredi Kartı' | 'Banka Transferi' | 'Çek' | 'Senet' | 'Havale/EFT' | 'Cari'>('Kasadan Nakit');
   
   // Data states
@@ -98,18 +98,31 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
       newErrors.jobDescription = 'Lütfen yapılan işi açıklayın';
     }
 
-    if (!selectedProject) {
-      newErrors.project = 'Lütfen bir proje seçin';
+    // Çoklu proje ödemelerini kontrol et
+    const validPayments = projectPayments.filter(p => p.projectId && p.amount);
+    if (validPayments.length === 0) {
+      newErrors.projectPayments = 'En az bir proje ve tutar girmelisiniz';
     }
 
-    const amountNum = parseFloat(amount);
-    if (!amount || isNaN(amountNum) || amountNum <= 0) {
-      newErrors.amount = 'Lütfen geçerli bir tutar girin (0&apos;dan büyük)';
-    }
-
-    if (amountNum > 999999999.99) {
-      newErrors.amount = 'Tutar çok yüksek (maksimum 999,999,999.99)';
-    }
+    // Her ödeme tutarını kontrol et
+    projectPayments.forEach((payment, index) => {
+      if (payment.projectId || payment.amount) {
+        if (!payment.projectId) {
+          newErrors[`project_${index}`] = 'Proje seçiniz';
+        }
+        if (!payment.amount) {
+          newErrors[`amount_${index}`] = 'Tutar giriniz';
+        } else {
+          const amountNum = parseFloat(payment.amount);
+          if (isNaN(amountNum) || amountNum <= 0) {
+            newErrors[`amount_${index}`] = 'Geçerli bir tutar girin';
+          }
+          if (amountNum > 999999999.99) {
+            newErrors[`amount_${index}`] = 'Tutar çok yüksek';
+          }
+        }
+      }
+    });
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -138,35 +151,53 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
         subcontractorName = supplier?.name || '';
       }
 
-      // Ödeme kaydı oluştur
-      const { data: payment, error: paymentError } = await supabase
-        .from('informal_payments')
-        .insert({
-          company_id: companyId,
-          supplier_id: subcontractorId,
-          project_id: selectedProject || null, // Null seçilebilir
-          description: jobDescription.trim(),
-          amount: parseFloat(amount),
-          payment_method: paymentMethod,
-          payment_date: new Date().toISOString().split('T')[0], // Sadece tarih, saat yok
-          has_contract: true,
-          created_by: userId
-        })
-        .select()
-        .single();
+      // Geçerli proje ödemelerini filtrele
+      const validPayments = projectPayments.filter(p => p.projectId && p.amount);
+      
+      // Her proje için ayrı ödeme kaydı oluştur
+      const paymentRecords = [];
+      
+      for (const payment of validPayments) {
+        const { data: paymentRecord, error: paymentError } = await supabase
+          .from('informal_payments')
+          .insert({
+            company_id: companyId,
+            supplier_id: subcontractorId,
+            project_id: payment.projectId,
+            description: jobDescription.trim(),
+            amount: parseFloat(payment.amount),
+            payment_method: paymentMethod,
+            payment_date: new Date().toISOString().split('T')[0],
+            has_contract: true,
+            created_by: userId
+          })
+          .select()
+          .single();
 
-      if (paymentError) {
-        console.error('Payment insert error:', paymentError);
-        throw new Error(paymentError.message || 'Ödeme kaydedilirken hata oluştu');
+        if (paymentError) {
+          console.error('Payment insert error:', paymentError);
+          throw new Error(paymentError.message || 'Ödeme kaydedilirken hata oluştu');
+        }
+        
+        paymentRecords.push(paymentRecord);
       }
 
-      // Proje bilgisini al
-      const project = projects.find(p => p.id === selectedProject);
+      // Toplam tutar hesapla
+      const totalAmount = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
       
-      // Makbuz numarası oluştur (örnek: MKB-20250123-001)
-      const receiptNumber = `MKB-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${payment.id.slice(0, 6).toUpperCase()}`;
+      // Makbuz numarası oluştur
+      const receiptNumber = `MKB-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${paymentRecords[0].id.slice(0, 6).toUpperCase()}`;
 
-      // PDF oluştur
+      // PDF için proje listesi oluştur
+      const projectDetails = validPayments.map(p => {
+        const project = projects.find(pr => pr.id === p.projectId);
+        return {
+          projectName: project?.name || 'Belirtilmemiş',
+          amount: parseFloat(p.amount)
+        };
+      });
+
+      // PDF oluştur (çoklu proje için)
       const pdfData: ContractPaymentData = {
         receiptNumber,
         date: new Date().toLocaleDateString('tr-TR', { 
@@ -175,27 +206,30 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
           day: 'numeric' 
         }),
         companyName: 'Luce Mimarlık',
-        companyAddress: 'Adres bilgisi buraya gelecek', // TODO: Company settings'den çek
-        companyPhone: 'Telefon bilgisi buraya gelecek', // TODO: Company settings'den çek
+        companyAddress: 'Adres bilgisi buraya gelecek',
+        companyPhone: 'Telefon bilgisi buraya gelecek',
         recipientName: subcontractorName,
         jobDescription: jobDescription.trim(),
-        projectName: project?.name || 'Belirtilmemiş',
-        amount: parseFloat(amount),
+        projectName: projectDetails.length === 1 
+          ? projectDetails[0].projectName 
+          : `${projectDetails.length} Proje (Toplam)`,
+        amount: totalAmount,
         paymentMethod: getPaymentMethodLabel(paymentMethod),
-        createdBy: 'Yetkili İsmi' // TODO: User bilgisinden çek
+        createdBy: 'Yetkili İsmi',
+        projectDetails: projectDetails.length > 1 ? projectDetails : undefined // Çoklu proje bilgisi
       };
 
       const pdfBlob = await generateContractPaymentPDF(pdfData);
 
       // PDF'i önizle ve indir
-      await previewContractPDF(pdfBlob); // Önizleme
+      await previewContractPDF(pdfBlob);
       
       setTimeout(async () => {
-        await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`); // İndirme
+        await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`);
       }, 500);
 
       // Başarılı
-      alert('Ödeme kaydedildi ve sözleşme oluşturuldu!');
+      alert(`${validPayments.length} proje için ödeme kaydedildi ve sözleşme oluşturuldu!`);
       onSuccess();
       handleClose();
 
@@ -225,7 +259,25 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
 
   // Helper: Ödeme yöntemi label
   const getPaymentMethodLabel = (method: string): string => {
-    return method; // Artık direkt label kullanıyoruz
+    return method;
+  };
+
+  // Helper: Proje ödemesi ekle
+  const addProjectPayment = () => {
+    setProjectPayments([...projectPayments, {projectId: '', amount: ''}]);
+  };
+
+  // Helper: Proje ödemesi kaldır
+  const removeProjectPayment = (index: number) => {
+    if (projectPayments.length === 1) return; // En az 1 tane olmalı
+    setProjectPayments(projectPayments.filter((_, i) => i !== index));
+  };
+
+  // Helper: Proje ödemesini güncelle
+  const updateProjectPayment = (index: number, field: 'projectId' | 'amount', value: string) => {
+    const updated = [...projectPayments];
+    updated[index][field] = value;
+    setProjectPayments(updated);
   };
 
   // Handle close
@@ -234,8 +286,7 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
     setNewSubcontractorName('');
     setIsNewSubcontractor(false);
     setJobDescription('');
-    setSelectedProject('');
-    setAmount('');
+    setProjectPayments([{projectId: '', amount: ''}]);
     setPaymentMethod('Kasadan Nakit');
     setSearchQuery('');
     setErrors({});
@@ -375,68 +426,131 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
             )}
           </div>
 
-          {/* Proje ve Tutar - Responsive Grid */}
-          <div className="grid gap-5 sm:grid-cols-2 sm:gap-6">
-            {/* Proje */}
-            <div className="space-y-3">
+          {/* Çoklu Proje Ödemeleri */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
               <label className="block text-sm font-semibold text-gray-900 sm:text-base">
-                İlgili Proje <span className="text-red-500">*</span>
+                Proje ve Tutar Bilgileri <span className="text-red-500">*</span>
               </label>
-            <select
-              value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              className="form-select w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-            >
-              <option value="">Proje seçin...</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-              {errors.project && (
-                <p className="mt-1.5 text-sm text-red-600">{errors.project}</p>
-              )}
-            </div>
-
-            {/* Ödeme Tutarı */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-gray-900 sm:text-base">
-                Ödeme Tutarı <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 py-3 pl-4 pr-12 text-sm transition-all focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                  <span className="text-base font-semibold text-gray-500">₺</span>
-                </div>
-              </div>
-              {errors.amount && (
-                <p className="mt-1.5 text-sm text-red-600">{errors.amount}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Tutarı yazıyla göster - Full width below grid */}
-          {amount && parseFloat(amount) > 0 && (
-            <div className="rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm">
-              <div className="flex items-start gap-2">
-                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <button
+                type="button"
+                onClick={addProjectPayment}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-primary-600 to-primary-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:from-primary-700 hover:to-primary-800 hover:shadow focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <div className="text-sm">
-                  <span className="font-semibold text-blue-900">Yazıyla:</span>
-                  <span className="ml-2 text-blue-800">{numberToWords(parseFloat(amount))}</span>
+                Ödeme Ekle
+              </button>
+            </div>
+
+            {errors.projectPayments && (
+              <p className="text-sm text-red-600">{errors.projectPayments}</p>
+            )}
+
+            <div className="space-y-3">
+              {projectPayments.map((payment, index) => (
+                <div key={index} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {/* Proje Seçimi */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Proje {index + 1}
+                      </label>
+                      <select
+                        value={payment.projectId}
+                        onChange={(e) => updateProjectPayment(index, 'projectId', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                      >
+                        <option value="">Proje seçin...</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                      {errors[`project_${index}`] && (
+                        <p className="text-xs text-red-600">{errors[`project_${index}`]}</p>
+                      )}
+                    </div>
+
+                    {/* Tutar Girişi */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Tutar (₺)
+                      </label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={payment.amount}
+                            onChange={(e) => updateProjectPayment(index, 'amount', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 py-2 pl-3 pr-10 text-sm transition-all focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <span className="text-sm font-semibold text-gray-500">₺</span>
+                          </div>
+                        </div>
+                        {projectPayments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeProjectPayment(index)}
+                            className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
+                            title="Kaldır"
+                          >
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {errors[`amount_${index}`] && (
+                        <p className="text-xs text-red-600">{errors[`amount_${index}`]}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Toplam Tutar Özeti */}
+            {projectPayments.some(p => p.amount && parseFloat(p.amount) > 0) && (
+              <div className="rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-blue-900">Toplam Tutar:</span>
+                    <span className="text-lg font-bold text-blue-600">
+                      {projectPayments.reduce((sum, p) => {
+                        const amount = parseFloat(p.amount);
+                        return sum + (isNaN(amount) ? 0 : amount);
+                      }, 0).toFixed(2)} ₺
+                    </span>
+                  </div>
+                  {projectPayments.reduce((sum, p) => {
+                    const amount = parseFloat(p.amount);
+                    return sum + (isNaN(amount) ? 0 : amount);
+                  }, 0) > 0 && (
+                    <div className="flex items-start gap-2 border-t border-blue-200 pt-2">
+                      <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="text-xs">
+                        <span className="font-medium text-blue-900">Yazıyla:</span>
+                        <span className="ml-1.5 text-blue-800">
+                          {numberToWords(projectPayments.reduce((sum, p) => {
+                            const amount = parseFloat(p.amount);
+                            return sum + (isNaN(amount) ? 0 : amount);
+                          }, 0))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Ödeme Yöntemi */}
           <div className="space-y-4">\

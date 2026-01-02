@@ -342,12 +342,24 @@ function parsePipeFormat(data: string): Partial<InvoiceQRData> {
 function parseJSONFormat(data: string): Partial<InvoiceQRData> {
   try {
     console.log('Trying JSON format parsing...');
-    const json = JSON.parse(data);
+    
+    // JSON string içindeki kontrolsüz karakterleri temizle (newline, tab, etc.)
+    // Ama string değerlerinin içindeki boşlukları koruyalım
+    const cleanedData = data
+      .replace(/\n/g, ' ')      // Yeni satırları boşluğa çevir
+      .replace(/\r/g, ' ')      // Carriage return'ü boşluğa çevir
+      .replace(/\t/g, ' ')      // Tab'ları boşluğa çevir
+      .replace(/\s+/g, ' ')     // Çoklu boşlukları tek boşluğa indir
+      .trim();                  // Baş ve sondaki boşlukları temizle
+    
+    console.log('Cleaned JSON data:', cleanedData.substring(0, 200));
+    
+    const json = JSON.parse(cleanedData);
     const result: Partial<InvoiceQRData> = {};
     
-    // Tax Number - many field names (vkntckn = Satıcı VKN)
-    if (json.vkn || json.VKN || json.vkntckn || json.taxNumber) {
-      result.taxNumber = json.vkn || json.VKN || json.vkntckn || json.taxNumber;
+    // Tax Number - many field names (vkntckn = Satıcı VKN, VKNTCKN büyük harfle de gelebilir)
+    if (json.vkn || json.VKN || json.vkntckn || json.VKNTCKN || json.taxNumber) {
+      result.taxNumber = json.vkn || json.VKN || json.vkntckn || json.VKNTCKN || json.taxNumber;
       console.log('Found Tax Number (JSON):', result.taxNumber);
     }
     
@@ -390,41 +402,106 @@ function parseJSONFormat(data: string): Partial<InvoiceQRData> {
     // Total Amount - many field names: odenecek, vergidahil, toplam, tutar
     if (json.odenecek || json.vergidahil || json.tutar || json.total || json.totalAmount || json.toplamTutar) {
       const amountValue = json.odenecek || json.vergidahil || json.tutar || json.total || json.totalAmount || json.toplamTutar;
-      result.totalAmount = parseAmount(String(amountValue));
-      console.log('Found Total Amount (JSON):', amountValue, '→', result.totalAmount);
+      // Boşlukları ve yeni satırları temizle
+      const cleanValue = String(amountValue).trim();
+      result.totalAmount = parseAmount(cleanValue);
+      console.log('Found Total Amount (JSON):', amountValue, '→ (cleaned):', cleanValue, '→', result.totalAmount);
     }
     
-    // VAT Amount - hesaplanankdv, kdv, vat
-    const kdvKeys = Object.keys(json).find(k => k.toLowerCase().includes('hesaplanankdv') || k === 'kdv' || k === 'vat');
-    if (kdvKeys) {
-      result.vatAmount = parseAmount(String(json[kdvKeys]));
-      console.log('Found VAT Amount (JSON):', json[kdvKeys], '→', result.vatAmount);
+    // VAT Amount - hesaplananKDV, kdv, vat (parantezli field'lar için dinamik arama)
+    let kdvValue = null;
+    
+    // Önce dinamik olarak parantezli KDV field'ını ara: hesaplananKDV(20), hesaplananKDV(10), vb.
+    const hesaplananKdvKey = Object.keys(json).find(k => k.startsWith('hesaplananKDV') || k.startsWith('hesaplanankdv'));
+    if (hesaplananKdvKey) {
+      kdvValue = json[hesaplananKdvKey];
+      console.log('Found VAT Amount (hesaplananKDV):', hesaplananKdvKey, '=', kdvValue);
     }
     
-    // Goods/Services Total - malhizmettoplam, matrah
-    if (json.malhizmettoplam || json.matrah) {
-      const goodsValue = json.malhizmettoplam || json.matrah;
-      result.goodsServicesTotal = parseAmount(String(goodsValue));
-      console.log('Found Goods/Services Total (JSON):', goodsValue, '→', result.goodsServicesTotal);
+    // Alternatif: kdv, vat gibi standart field'lar
+    if (!kdvValue) {
+      const kdvKeys = Object.keys(json).find(k => k.toLowerCase().includes('hesaplanankdv') || k === 'kdv' || k === 'vat');
+      if (kdvKeys) {
+        kdvValue = json[kdvKeys];
+        console.log('Found VAT Amount (standard):', kdvKeys, '=', kdvValue);
+      }
     }
     
-    // KDV Matrah - alternative source for goods/services
-    const kdvMatrahKey = Object.keys(json).find(k => k.toLowerCase().includes('kdvmatrah'));
-    if (kdvMatrahKey && !result.goodsServicesTotal) {
-      result.goodsServicesTotal = parseAmount(String(json[kdvMatrahKey]));
-      console.log('Found Goods/Services from KDV Matrah (JSON):', json[kdvMatrahKey], '→', result.goodsServicesTotal);
+    if (kdvValue !== null) {
+      // Boşlukları ve yeni satırları temizle
+      const cleanKdvValue = String(kdvValue).trim();
+      result.vatAmount = parseAmount(cleanKdvValue);
+      console.log('Final VAT Amount:', kdvValue, '→ (cleaned):', cleanKdvValue, '→', result.vatAmount);
     }
     
-    // Supplier Name
-    if (json.tedarikci || json.supplier || json.supplierName || json.satici) {
-      result.supplierName = json.tedarikci || json.supplier || json.supplierName || json.satici;
+    // Goods/Services Total - malHizmet, malhizmettoplam, matrah
+    // malHizmet = KDV hariç tutar (en yaygın)
+    let goodsValue = null;
+    
+    if (json.malHizmet) {
+      goodsValue = json.malHizmet;
+      console.log('Found Goods/Services (malHizmet):', goodsValue);
+    } else if (json.malhizmettoplam || json.matrah) {
+      goodsValue = json.malhizmettoplam || json.matrah;
+      console.log('Found Goods/Services (malhizmettoplam/matrah):', goodsValue);
+    }
+    
+    // malHizmetKDV(20) gibi parantezli field'ları da kontrol et
+    if (!goodsValue) {
+      const malHizmetKdvKey = Object.keys(json).find(k => k.startsWith('malHizmetKDV') || k.startsWith('malhizmetkdv'));
+      if (malHizmetKdvKey) {
+        goodsValue = json[malHizmetKdvKey];
+        console.log('Found Goods/Services (malHizmetKDV):', malHizmetKdvKey, '=', goodsValue);
+      }
+    }
+    
+    // kdvmatrah(20) gibi parantezli field'ları kontrol et
+    if (!goodsValue) {
+      const kdvMatrahKey = Object.keys(json).find(k => k.toLowerCase().startsWith('kdvmatrah'));
+      if (kdvMatrahKey) {
+        goodsValue = json[kdvMatrahKey];
+        console.log('Found Goods/Services (kdvmatrah):', kdvMatrahKey, '=', goodsValue);
+      }
+    }
+    
+    if (goodsValue !== null) {
+      // Boşlukları ve yeni satırları temizle
+      const cleanValue = String(goodsValue).trim();
+      result.goodsServicesTotal = parseAmount(cleanValue);
+      console.log('Final Goods/Services Total:', goodsValue, '→ (cleaned):', cleanValue, '→', result.goodsServicesTotal);
+    }
+    
+    // Supplier Name - unvan, tedarikci, supplier, supplierName, satici
+    if (json.unvan || json.tedarikci || json.supplier || json.supplierName || json.satici) {
+      result.supplierName = json.unvan || json.tedarikci || json.supplier || json.supplierName || json.satici;
       console.log('Found Supplier Name (JSON):', result.supplierName);
     }
     
-    // ETTN/UUID
-    if (json.ettn || json.uuid || json.UUID) {
-      result.etag = json.ettn || json.uuid || json.UUID;
+    // ETTN/UUID (büyük harfle de gelebilir)
+    if (json.ettn || json.ETTN || json.uuid || json.UUID) {
+      result.etag = json.ettn || json.ETTN || json.uuid || json.UUID;
       console.log('Found ETTN (JSON):', result.etag);
+    }
+    
+    // Tevkifat Hesaplama - eğer tip TEVKIFAT ise vergidahil - odenecek farkını hesapla
+    if (result.type && result.type.toUpperCase().includes('TEVKIFAT')) {
+      const vergidahilValue = json.vergidahil || json.total || json.totalAmount;
+      const odenecekValue = json.odenecek || json.payable;
+      
+      if (vergidahilValue && odenecekValue) {
+        const vergidahil = parseAmount(String(vergidahilValue));
+        const odenecek = parseAmount(String(odenecekValue));
+        
+        if (vergidahil && odenecek) {
+          result.withholdingAmount = vergidahil - odenecek;
+          console.log('Calculated Withholding (Tevkifat):', 
+            `vergidahil (${vergidahil}) - odenecek (${odenecek}) = ${result.withholdingAmount}`);
+          
+          // Ödenecek tutarı totalAmount olarak güncelle (tevkifat sonrası ödenecek)
+          result.totalAmount = odenecek;
+          console.log('Updated Total Amount to payable amount:', result.totalAmount);
+        }
+      }
     }
     
     const fieldCount = Object.keys(result).length;

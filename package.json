@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "clean:storage": "tsx scripts/clean-storage-files.ts",
+    "clean:help": "cat scripts/CLEAN_TEST_DATA_GUIDE.md"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.18",

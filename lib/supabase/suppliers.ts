@@ -155,6 +155,45 @@ export async function getAllSuppliers(companyId: string): Promise<Supplier[]> {
 }
 
 /**
+ * VKN'ye göre supplier ismini güncelle
+ * 
+ * @param vkn - Vergi Kimlik Numarası
+ * @param name - Yeni firma adı
+ * @param companyId - Şirket ID
+ * @returns Güncellenmiş supplier veya null
+ */
+export async function updateSupplierNameByVKN(
+  vkn: string,
+  name: string,
+  companyId: string
+): Promise<Supplier | null> {
+  try {
+    // Boş isim kontrolü
+    if (!name || name.trim() === '' || name.trim() === 'Bilinmeyen Tedarikçi') {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('suppliers')
+      .update({ name: name.trim() })
+      .eq('company_id', companyId)
+      .eq('vkn', vkn)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating supplier name by VKN:', error);
+      return null;
+    }
+
+    return data as Supplier;
+  } catch (error) {
+    console.error('Unexpected error in updateSupplierNameByVKN:', error);
+    return null;
+  }
+}
+
+/**
  * VKN'ye göre tedarikçi arar, yoksa yeni kayıt oluşturur
  * QR kod okuma işlemlerinde kullanılır
  * 
@@ -170,7 +209,14 @@ export async function getOrCreateSupplier(
 ): Promise<Supplier | null> {
   // Önce mevcut kaydı kontrol et
   const existing = await getSupplierByVKN(vkn, companyId);
+  
   if (existing) {
+    // Eğer mevcut kayıt "Bilinmeyen Tedarikçi" ise ve yeni isim varsa, güncelle
+    if (existing.name === 'Bilinmeyen Tedarikçi' && name && name.trim() !== '' && name !== 'Bilinmeyen Tedarikçi') {
+      console.log(`Updating supplier name from "${existing.name}" to "${name}" for VKN: ${vkn}`);
+      const updated = await updateSupplierNameByVKN(vkn, name, companyId);
+      return updated || existing;
+    }
     return existing;
   }
 
