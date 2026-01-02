@@ -39,6 +39,27 @@ export async function generateContractPaymentPDF(data: ContractPaymentData): Pro
   const amountStr = formatCurrency(data.amount);
   const amountWords = numberToWords(data.amount);
 
+  // Proje bilgilerini hazırla
+  let projectText: any[];
+  if (data.projectDetails && data.projectDetails.length > 0) {
+    // Çoklu proje varsa her birini listele
+    projectText = [];
+    data.projectDetails.forEach((project, index) => {
+      if (index > 0) {
+        projectText.push('\n');
+      }
+      projectText.push({ text: `${index + 1}. ${project.projectName}: ${formatCurrency(project.amount)}`, bold: true });
+    });
+    projectText.push('\n\n');
+    projectText.push('kapsamında gerçekleştirilen\n\n');
+  } else {
+    // Tek proje
+    projectText = [
+      { text: `"${data.projectName}"`, bold: true },
+      ' kapsamında gerçekleştirilen\n\n'
+    ];
+  }
+
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
     pageMargins: [60, 60, 60, 60],
@@ -69,8 +90,7 @@ export async function generateContractPaymentPDF(data: ContractPaymentData): Pro
       // ANA METİN (PARAGRAF FORMATINDA)
       {
         text: [
-          { text: `"${data.projectName}"`, bold: true },
-          ' kapsamında gerçekleştirilen\n\n',
+          ...projectText,
           { text: `"${data.jobDescription}"`, bold: true },
           '\n\nişlerine istinaden;\n\n',
           { text: `"${data.recipientName}"`, bold: true },
