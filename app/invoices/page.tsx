@@ -47,6 +47,14 @@ export default function InvoicesPage() {
     invoiceNumber: '',
     projectId: '',
   });
+  
+  const [sortConfig, setSortConfig] = useState<{
+    field: 'date' | 'project' | 'amount' | 'supplier' | null;
+    direction: 'asc' | 'desc';
+  }>({
+    field: 'date',
+    direction: 'desc'
+  });
 
   const [formData, setFormData] = useState({
     amount: '',
@@ -629,7 +637,7 @@ export default function InvoicesPage() {
 
     try {
       // Get filtered assigned invoices with their projects
-      const assignedInvoices = filteredInvoices.filter(
+      const assignedInvoices = sortedInvoices.filter(
         inv => inv.project_links && inv.project_links.length > 0
       );
 
@@ -702,8 +710,8 @@ export default function InvoicesPage() {
 
   function handleExportExcel() {
     try {
-      // Ekranda görünen filtrelenmiş faturaları al
-      const dataToExport = filteredInvoices.map((invoice, index) => {
+      // Ekranda görünen sıralanmış faturaları al
+      const dataToExport = sortedInvoices.map((invoice, index) => {
         // Ödeme bilgilerini hesapla
         const totalPaid = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
         const remaining = Number(invoice.amount) - totalPaid;
@@ -805,6 +813,41 @@ export default function InvoicesPage() {
     
     return true;
   });
+
+  // Apply sorting
+  const sortedInvoices = [...filteredInvoices].sort((a, b) => {
+    if (!sortConfig.field) return 0;
+    
+    const direction = sortConfig.direction === 'asc' ? 1 : -1;
+    
+    switch (sortConfig.field) {
+      case 'date':
+        return direction * (new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime());
+      
+      case 'project':
+        const aProject = a.project_links?.[0]?.project?.name || '';
+        const bProject = b.project_links?.[0]?.project?.name || '';
+        return direction * aProject.localeCompare(bProject, 'tr');
+      
+      case 'amount':
+        return direction * (Number(a.amount) - Number(b.amount));
+      
+      case 'supplier':
+        const aSupplier = a.supplier_name || '';
+        const bSupplier = b.supplier_name || '';
+        return direction * aSupplier.localeCompare(bSupplier, 'tr');
+      
+      default:
+        return 0;
+    }
+  });
+
+  function handleSort(field: 'date' | 'project' | 'amount' | 'supplier') {
+    setSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  }
 
   function handleClearFilters() {
     setFilters({
@@ -956,12 +999,73 @@ export default function InvoicesPage() {
 
               <div className="flex items-center justify-between pt-2 border-t border-secondary-200">
                 <p className="text-sm text-secondary-600">
-                  {filteredInvoices.length} fatura gösteriliyor
+                  {sortedInvoices.length} fatura gösteriliyor
                 </p>
               </div>
             </div>
           </Card>
         )}
+
+        {/* Sorting Controls */}
+        <Card>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-secondary-700">Sıralama</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleSort('date')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'date'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                📅 Tarihe Göre
+                {sortConfig.field === 'date' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('project')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'project'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                📁 Projeye Göre
+                {sortConfig.field === 'project' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('amount')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'amount'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                💰 Tutara Göre
+                {sortConfig.field === 'amount' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('supplier')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'supplier'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                🏢 Firmaya Göre
+                {sortConfig.field === 'supplier' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </Card>
 
         <div className="border-b border-secondary-200">
           <nav className="-mb-px flex space-x-8">
@@ -1025,7 +1129,7 @@ export default function InvoicesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-secondary-200">
-                {filteredInvoices.length === 0 ? (
+                {sortedInvoices.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-6 py-12 text-center text-sm text-secondary-500">
                       {activeTab === 'pending' && 'Bekleyen fatura bulunmuyor'}
@@ -1034,7 +1138,7 @@ export default function InvoicesPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredInvoices.map((invoice) => (
+                  sortedInvoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-secondary-50">
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-secondary-900">
                         {formatDate(invoice.invoice_date)}
