@@ -25,6 +25,21 @@ interface Project {
   name: string;
 }
 
+// Helper: File to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix (data:application/pdf;base64,)
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
 export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuccess }: ContractPaymentModalProps) {
   // Form states
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<string>('');
@@ -221,12 +236,65 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
 
       const pdfBlob = await generateContractPaymentPDF(pdfData);
 
-      // PDF'i önizle ve indir
-      await previewContractPDF(pdfBlob);
+      // PDF'i Cloudinary'ye yükle
+      const pdfFile = new File([pdfBlob], `${receiptNumber}.pdf`, { type: 'application/pdf' });
       
-      setTimeout(async () => {
-        await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`);
-      }, 500);
+      let pdfUrl = '';
+      try {
+        // Cloudinary'ye yükle - ilk ödeme kaydının project_id'sini kullan
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            file: await fileToBase64(pdfFile),
+            fileName: pdfFile.name,
+            fileType: pdfFile.type,
+            fileSize: pdfFile.size,
+            projectId: validPayments[0].projectId || 'general',
+            category: 'payment_records',
+          }),
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('PDF yükleme başarısız');
+        }
+
+        const uploadData = await uploadResponse.json();
+        pdfUrl = uploadData.url;
+
+        // Tüm ödeme kayıtlarını PDF URL'si ile güncelle
+        for (const paymentRecord of paymentRecords) {
+          const { error: updateError } = await supabase
+            .from('informal_payments')
+            .update({ payment_record_pdf_url: pdfUrl })
+            .eq('id', paymentRecord.id);
+
+          if (updateError) {
+            console.error('PDF URL kaydetme hatası:', updateError);
+          }
+        }
+      } catch (uploadError) {
+        console.error('PDF yükleme hatası:', uploadError);
+        // PDF yüklenemese bile işleme devam et, eski yöntemle önizle
+        await previewContractPDF(pdfBlob);
+        setTimeout(async () => {
+          await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`);
+        }, 500);
+      }
+
+      // PDF'i önizle ve indir
+      if (pdfUrl) {
+        // URL varsa yeni sekmede aç
+        window.open(pdfUrl, '_blank');
+      } else {
+        // URL yoksa eski yöntem
+        await previewContractPDF(pdfBlob);
+        setTimeout(async () => {
+          await downloadContractPDF(pdfBlob, `${receiptNumber}.pdf`);
+        }, 500);
+      }
 
       // Başarılı
       alert(`${validPayments.length} proje için ödeme kaydedildi ve sözleşme oluşturuldu!`);
