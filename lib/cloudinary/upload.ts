@@ -211,23 +211,28 @@ export async function uploadPDFToCloudinary(
     const folder = `luce_web/contracts/${companyId}`;
     console.log('Uploading to folder:', folder);
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary as raw resource
     const result = await cloudinary.uploader.upload(dataURI, {
       folder,
       resource_type: 'raw',
       public_id: fileName.replace('.pdf', ''),
       unique_filename: true,
       access_mode: 'public',
-      flags: 'attachment:false', // Force inline display in browser
     });
 
     console.log('PDF uploaded successfully:', { publicId: result.public_id, url: result.secure_url });
 
-    // Ensure URL has fl_attachment:false flag for inline display
+    // For raw PDFs, we need to use the direct URL with fl_attachment flag
+    // Cloudinary raw URLs format: https://res.cloudinary.com/{cloud_name}/raw/upload/v{version}/{public_id}.pdf
+    // To make it open in browser instead of download, add fl_attachment:false flag
     let finalUrl = result.secure_url;
-    if (!finalUrl.includes('fl_attachment')) {
-      finalUrl = finalUrl.replace('/upload/', '/upload/fl_attachment:false/');
+    
+    // Insert fl_attachment:false flag after /upload/
+    if (finalUrl.includes('/raw/upload/')) {
+      finalUrl = finalUrl.replace('/raw/upload/', '/raw/upload/fl_attachment:false/');
     }
+
+    console.log('Final PDF URL:', finalUrl);
 
     return {
       url: finalUrl,
