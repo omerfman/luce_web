@@ -198,7 +198,7 @@ export async function uploadPDFToCloudinary(
   fileName: string,
   companyId: string
 ): Promise<{ url: string; publicId: string }> {
-  console.log('Uploading PDF to Cloudinary:', { fileName, size: pdfBlob.size });
+  console.log('📤 Uploading PDF to Cloudinary:', { fileName, size: pdfBlob.size });
 
   try {
     // Convert Blob to base64
@@ -209,36 +209,46 @@ export async function uploadPDFToCloudinary(
 
     // Create folder path: luce_web/contracts/{companyId}
     const folder = `luce_web/contracts/${companyId}`;
-    console.log('Uploading to folder:', folder);
+    console.log('📁 Uploading to folder:', folder);
 
     // Upload to Cloudinary as raw resource
-    // For raw files, we need to include the extension in public_id
-    const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+    // Remove .pdf extension from public_id, Cloudinary will add it automatically
+    const cleanFileName = fileName.replace('.pdf', '');
     
+    console.log('🔧 Upload params:', { 
+      folder, 
+      public_id: cleanFileName,
+      resource_type: 'raw' 
+    });
+
     const result = await cloudinary.uploader.upload(dataURI, {
       folder,
       resource_type: 'raw',
       public_id: cleanFileName,
-      unique_filename: false, // Use exact filename without random suffix
-      overwrite: false, // Don't overwrite existing files
+      overwrite: true, // Overwrite if exists to avoid duplicates
       access_mode: 'public',
     });
 
-    console.log('PDF uploaded successfully:', { publicId: result.public_id, url: result.secure_url });
+    console.log('✅ PDF uploaded successfully!');
+    console.log('📋 Upload result:', { 
+      publicId: result.public_id, 
+      url: result.secure_url,
+      format: result.format,
+      resourceType: result.resource_type 
+    });
 
     // For raw PDFs, use the secure_url directly
-    // Cloudinary doesn't support fl_attachment transformations for raw resources
-    // The filename in the URL path is enough for browsers to recognize it as PDF
+    // Cloudinary doesn't support transformations for raw resources
     const finalUrl = result.secure_url;
 
-    console.log('Final PDF URL:', finalUrl);
+    console.log('🔗 Final PDF URL:', finalUrl);
 
     return {
       url: finalUrl,
       publicId: result.public_id,
     };
   } catch (error) {
-    console.error('PDF upload error:', error);
+    console.error('❌ PDF upload error:', error);
     throw new Error('PDF yüklenirken bir hata oluştu');
   }
 }
