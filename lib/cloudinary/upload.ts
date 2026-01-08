@@ -126,6 +126,15 @@ export async function uploadToCloudinary(
       finalUrl = finalUrl.replace('/image/upload/', '/video/upload/');
     }
     
+    // PDF dosyaları için tarayıcıda görüntüleme modunu aktif et
+    // fl_attachment:false eklememek yerine, flags parametresini kullanarak inline görüntüleme sağla
+    if (file.type === 'application/pdf') {
+      // Cloudinary PDF URL'lerini tarayıcıda açılacak şekilde formatla
+      // /upload/ kısmından sonra /fl_attachment:false/ veya direkt publicId'yi kullan
+      // En güvenli yöntem: Cloudinary'nin PDF viewer URL'sini kullan
+      finalUrl = finalUrl.replace('/upload/', '/upload/fl_attachment:false/');
+    }
+    
     return {
       url: finalUrl,
       publicId: result.public_id,
