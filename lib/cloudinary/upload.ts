@@ -212,24 +212,30 @@ export async function uploadPDFToCloudinary(
     console.log('Uploading to folder:', folder);
 
     // Upload to Cloudinary as raw resource
+    // Keep .pdf extension in public_id for proper file naming
+    const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
     const result = await cloudinary.uploader.upload(dataURI, {
       folder,
       resource_type: 'raw',
-      public_id: fileName.replace('.pdf', ''),
+      public_id: cleanFileName,
       unique_filename: true,
       access_mode: 'public',
+      format: 'pdf', // Explicitly specify format
     });
 
     console.log('PDF uploaded successfully:', { publicId: result.public_id, url: result.secure_url });
 
     // For raw PDFs, we need to use the direct URL with fl_attachment flag
     // Cloudinary raw URLs format: https://res.cloudinary.com/{cloud_name}/raw/upload/v{version}/{public_id}.pdf
-    // To make it open in browser instead of download, add fl_attachment:false flag
+    // To make it open in browser instead of download, add fl_attachment:inline
     let finalUrl = result.secure_url;
     
-    // Insert fl_attachment:false flag after /upload/
+    // Insert fl_attachment:inline flag after /raw/upload/ to display in browser with correct filename
+    // Also add the filename using the fl_attachment parameter
     if (finalUrl.includes('/raw/upload/')) {
-      finalUrl = finalUrl.replace('/raw/upload/', '/raw/upload/fl_attachment:false/');
+      // Extract the base filename without extension for display
+      const displayName = cleanFileName.replace('.pdf', '');
+      finalUrl = finalUrl.replace('/raw/upload/', `/raw/upload/fl_attachment:${encodeURIComponent(cleanFileName)}/`);
     }
 
     console.log('Final PDF URL:', finalUrl);
