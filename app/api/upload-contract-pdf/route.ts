@@ -6,7 +6,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadPDFToCloudinary } from '@/lib/cloudinary/upload';
 import { createServerClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,8 +30,7 @@ export async function POST(request: NextRequest) {
     const { url, publicId } = await uploadPDFToCloudinary(blob, fileName, companyId);
 
     // Update informal_payments record with PDF URL
-    const cookieStore = cookies();
-    const supabase = createServerClient(cookieStore);
+    const supabase = await createServerClient();
 
     const { error: updateError } = await supabase
       .from('informal_payments')
