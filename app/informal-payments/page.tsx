@@ -123,6 +123,33 @@ export default function InformalPaymentsPage() {
     }
   };
 
+  // PDF indirme fonksiyonu - Cloudinary URL'inden fetch edip Blob olarak indirir
+  const handleDownloadPDF = async (pdfUrl: string, paymentDate: string) => {
+    try {
+      // Cloudinary URL'inden PDF'i fetch et
+      const response = await fetch(pdfUrl);
+      if (!response.ok) {
+        throw new Error('PDF indirilemedi');
+      }
+      
+      // Blob'a çevir
+      const blob = await response.blob();
+      
+      // Blob URL oluştur ve indir
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `Sozlesme-${paymentDate}.pdf`; // .pdf uzantısı ile
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('PDF indirme hatası:', error);
+      alert('PDF indirilirken bir hata oluştu. Lütfen tekrar deneyin.');
+    }
+  };
+
   const handleSubmit = async (data: any) => {
     try {
       if (editingPayment) {
@@ -367,19 +394,16 @@ export default function InformalPaymentsPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-center">
                         {payment.contract_pdf_url ? (
-                          <a
-                            href={payment.contract_pdf_url}
-                            download={`Sozlesme-${payment.payment_date}.pdf`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => handleDownloadPDF(payment.contract_pdf_url!, payment.payment_date)}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                            title="PDF'i görüntüle"
+                            title="PDF'i indir"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>PDF</span>
-                          </a>
+                          </button>
                         ) : payment.has_contract ? (
                           <span className="inline-flex items-center gap-1 text-xs text-amber-600">
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -465,18 +489,15 @@ export default function InformalPaymentsPage() {
                   {/* PDF Butonu */}
                   <div className="flex-1">
                     {payment.contract_pdf_url ? (
-                      <a
-                        href={payment.contract_pdf_url}
-                        download={`Sozlesme-${payment.payment_date}.pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => handleDownloadPDF(payment.contract_pdf_url!, payment.payment_date)}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <span>Sözleşme PDF</span>
-                      </a>
+                      </button>
                     ) : payment.has_contract ? (
                       <div className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
