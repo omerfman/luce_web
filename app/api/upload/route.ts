@@ -13,66 +13,31 @@ const supabaseAdmin = createClient(
 
 /**
  * POST - Upload file to Cloudinary and save metadata to database
- * Supports both FormData and JSON (base64) uploads
  */
 export async function POST(request: NextRequest) {
   try {
     console.log('Upload API called');
-    const contentType = request.headers.get('content-type') || '';
-    
-    let file: File;
-    let projectId: string;
-    let category: string;
-    let userId: string | undefined;
-    let companyId: string | undefined;
-    let skipDatabaseSave = false;
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+    const projectId = formData.get('projectId') as string;
+    const category = formData.get('category') as string;
+    const userId = formData.get('userId') as string;
+    const companyId = formData.get('companyId') as string;
 
-    // Check if it's JSON (base64) or FormData
-    if (contentType.includes('application/json')) {
-      // JSON upload (base64)
-      const body = await request.json();
-      const { file: base64Data, fileName, fileType, fileSize, projectId: pId, category: cat } = body;
-      
-      if (!base64Data || !fileName || !fileType || !pId || !cat) {
-        console.log('Missing parameters in JSON request');
-        return NextResponse.json(
-          { error: 'Eksik parametreler' },
-          { status: 400 }
-        );
-      }
+    console.log('Upload params:', { 
+      fileName: file?.name, 
+      projectId, 
+      category, 
+      userId, 
+      companyId 
+    });
 
-      // Convert base64 to File
-      const binaryData = Buffer.from(base64Data, 'base64');
-      file = new File([binaryData], fileName, { type: fileType });
-      projectId = pId;
-      category = cat;
-      skipDatabaseSave = true; // For payment records, we don't save to project_files
-      
-      console.log('JSON upload params:', { fileName, projectId, category, fileSize });
-    } else {
-      // FormData upload
-      const formData = await request.formData();
-      file = formData.get('file') as File;
-      projectId = formData.get('projectId') as string;
-      category = formData.get('category') as string;
-      userId = formData.get('userId') as string;
-      companyId = formData.get('companyId') as string;
-
-      console.log('FormData upload params:', { 
-        fileName: file?.name, 
-        projectId, 
-        category, 
-        userId, 
-        companyId 
-      });
-
-      if (!file || !projectId || !category || !userId || !companyId) {
-        console.log('Missing parameters in FormData request');
-        return NextResponse.json(
-          { error: 'Eksik parametreler' },
-          { status: 400 }
-        );
-      }
+    if (!file || !projectId || !category || !userId || !companyId) {
+      console.log('Missing parameters');
+      return NextResponse.json(
+        { error: 'Eksik parametreler' },
+        { status: 400 }
+      );
     }
 
     // Upload to Cloudinary
@@ -80,46 +45,36 @@ export async function POST(request: NextRequest) {
     const uploadResult = await uploadToCloudinary(file, projectId, category);
     console.log('Cloudinary upload successful:', uploadResult.publicId);
 
-    // Save metadata to database (only for FormData uploads)
-    if (!skipDatabaseSave && userId && companyId) {
-      console.log('Saving to database...');
-      const { data, error } = await supabaseAdmin
-        .from('project_files')
-        .insert({
-          project_id: projectId,
-          category,
-          file_name: uploadResult.fileName,
-          file_url: uploadResult.url,
-          file_type: uploadResult.fileType,
-          file_size: uploadResult.fileSize,
-          cloudinary_public_id: uploadResult.publicId,
-          cloudinary_resource_type: uploadResult.resourceType,
-          uploaded_by: userId,
-          company_id: companyId,
-        })
-        .select()
-        .single();
+    // Save metadata to database
+    console.log('Saving to database...');
+    const { data, error } = await supabaseAdmin
+      .from('project_files')
+      .insert({
+        project_id: projectId,
+        category,
+        file_name: uploadResult.fileName,
+        file_url: uploadResult.url,
+        file_type: uploadResult.fileType,
+        file_size: uploadResult.fileSize,
+        cloudinary_public_id: uploadResult.publicId,
+        cloudinary_resource_type: uploadResult.resourceType,
+        uploaded_by: userId,
+        company_id: companyId,
+      })
+      .select()
+      .single();
 
-      if (error) {
-        console.error('Database error:', error);
-        // If DB insert fails, delete from Cloudinary
-        await deleteFromCloudinary(uploadResult.publicId, uploadResult.resourceType);
-        throw error;
-      }
-
-      console.log('Upload completed successfully');
-      return NextResponse.json({
-        success: true,
-        file: data,
-      });
+    if (error) {
+      console.error('Database error:', error);
+      // If DB insert fails, delete from Cloudinary
+      await deleteFromCloudinary(uploadResult.publicId, uploadResult.resourceType);
+      throw error;
     }
 
-    // For JSON uploads (payment records), return just the URL
-    console.log('Upload completed successfully (no DB save)');
+    console.log('Upload completed successfully');
     return NextResponse.json({
       success: true,
-      url: uploadResult.url,
-      publicId: uploadResult.publicId,
+      file: data,
     });
   } catch (error: any) {
     console.error('Upload error:', error);

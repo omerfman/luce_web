@@ -189,4 +189,54 @@ export function getOptimizedImageUrl(
   });
 }
 
+/**
+ * Upload PDF blob to Cloudinary
+ * Used for contract payment PDFs
+ */
+export async function uploadPDFToCloudinary(
+  pdfBlob: Blob,
+  fileName: string,
+  companyId: string
+): Promise<{ url: string; publicId: string }> {
+  console.log('Uploading PDF to Cloudinary:', { fileName, size: pdfBlob.size });
+
+  try {
+    // Convert Blob to base64
+    const arrayBuffer = await pdfBlob.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    const dataURI = `data:application/pdf;base64,${base64}`;
+
+    // Create folder path: luce_web/contracts/{companyId}
+    const folder = `luce_web/contracts/${companyId}`;
+    console.log('Uploading to folder:', folder);
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder,
+      resource_type: 'raw',
+      public_id: fileName.replace('.pdf', ''),
+      unique_filename: true,
+      access_mode: 'public',
+      flags: 'attachment:false', // Force inline display in browser
+    });
+
+    console.log('PDF uploaded successfully:', { publicId: result.public_id, url: result.secure_url });
+
+    // Ensure URL has fl_attachment:false flag for inline display
+    let finalUrl = result.secure_url;
+    if (!finalUrl.includes('fl_attachment')) {
+      finalUrl = finalUrl.replace('/upload/', '/upload/fl_attachment:false/');
+    }
+
+    return {
+      url: finalUrl,
+      publicId: result.public_id,
+    };
+  } catch (error) {
+    console.error('PDF upload error:', error);
+    throw new Error('PDF yüklenirken bir hata oluştu');
+  }
+}
+
 export { cloudinary };

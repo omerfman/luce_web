@@ -325,94 +325,192 @@ export default function InformalPaymentsPage() {
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tarih</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Taşeron</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Proje</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Açıklama</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Tutar</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Yöntem</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Sözleşme</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {payments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
-                      {formatDate(payment.payment_date)}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
-                      {payment.supplier?.name || '-'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {payment.project?.name || '-'}
-                    </td>
-                    <td className="max-w-xs truncate px-6 py-4 text-sm text-gray-600" title={payment.description}>
-                      {payment.description}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-semibold text-primary-600">
-                      {formatCurrency(payment.amount)}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm">
-                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                        {payment.payment_method || '-'}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-center">
-                      {payment.has_contract && payment.payment_record_pdf_url ? (
-                        <a
-                          href={payment.payment_record_pdf_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:from-purple-700 hover:to-indigo-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                          title="Tutanağı görüntüle, yazdır veya indir"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          <span className="hidden sm:inline">Tutanak PDF</span>
-                        </a>
-                      ) : payment.has_contract ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span className="hidden sm:inline">PDF yok</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleEdit(payment)}
-                          className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
-                          title="Düzenle"
-                        >
-                          <EditIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(payment.id)}
-                          className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
-                          title="Sil"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden lg:block overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tarih</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Taşeron</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Proje</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Açıklama</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Tutar</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Yöntem</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Sözleşme</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">İşlemler</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {payments.map((payment) => (
+                    <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                        {formatDate(payment.payment_date)}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                        {payment.supplier?.name || '-'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {payment.project?.name || '-'}
+                      </td>
+                      <td className="max-w-xs truncate px-6 py-4 text-sm text-gray-600" title={payment.description}>
+                        {payment.description}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-semibold text-primary-600">
+                        {formatCurrency(payment.amount)}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm">
+                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                          {payment.payment_method || '-'}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
+                        {payment.contract_pdf_url ? (
+                          <a
+                            href={payment.contract_pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                            title="PDF'i görüntüle"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>PDF</span>
+                          </a>
+                        ) : payment.has_contract ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span>PDF Yok</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleEdit(payment)}
+                            className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                            title="Düzenle"
+                          >
+                            <EditIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(payment.id)}
+                            className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
+                            title="Sil"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile Card View */}
+          <div className="lg:hidden space-y-4">
+            {payments.map((payment) => (
+              <div key={payment.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                {/* Header: Taşeron ve Tutar */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-base font-semibold text-gray-900">
+                      {payment.supplier?.name || 'Taşeron Bilgisi Yok'}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formatDate(payment.payment_date)}
+                    </p>
+                  </div>
+                  <div className="text-right ml-3">
+                    <p className="text-lg font-bold text-primary-600">
+                      {formatCurrency(payment.amount)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Proje */}
+                {payment.project?.name && (
+                  <div className="mb-2">
+                    <span className="text-xs font-medium text-gray-500">Proje:</span>
+                    <p className="text-sm text-gray-900 mt-0.5">{payment.project.name}</p>
+                  </div>
+                )}
+
+                {/* Açıklama */}
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-gray-500">Açıklama:</span>
+                  <p className="text-sm text-gray-700 mt-0.5 line-clamp-2">{payment.description}</p>
+                </div>
+
+                {/* Ödeme Yöntemi */}
+                {payment.payment_method && (
+                  <div className="mb-3">
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-800">
+                      {payment.payment_method}
+                    </span>
+                  </div>
+                )}
+
+                {/* Actions Row */}
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100">
+                  {/* PDF Butonu */}
+                  <div className="flex-1">
+                    {payment.contract_pdf_url ? (
+                      <a
+                        href={payment.contract_pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>Sözleşme PDF</span>
+                      </a>
+                    ) : payment.has_contract ? (
+                      <div className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span>PDF Bulunamadı</span>
+                      </div>
+                    ) : (
+                      <div className="text-center text-xs text-gray-400 py-2">
+                        Sözleşme yok
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Edit ve Delete Butonları */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(payment)}
+                      className="rounded-lg p-2.5 text-blue-600 transition-colors hover:bg-blue-50 active:bg-blue-100"
+                      title="Düzenle"
+                    >
+                      <EditIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(payment.id)}
+                      className="rounded-lg p-2.5 text-red-600 transition-colors hover:bg-red-50 active:bg-red-100"
+                      title="Sil"
+                    >
+                      <TrashIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
         {/* Modal */}

@@ -116,7 +116,7 @@ export interface InformalPayment {
   created_at: string;
   updated_at: string;
   has_contract?: boolean;
-  payment_record_pdf_url?: string | null;
+  contract_pdf_url?: string | null;
   // Relations
   supplier?: Supplier;
   project?: Project;
