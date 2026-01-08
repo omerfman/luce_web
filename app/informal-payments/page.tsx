@@ -369,6 +369,7 @@ export default function InformalPaymentsPage() {
                         {payment.contract_pdf_url ? (
                           <a
                             href={payment.contract_pdf_url}
+                            download={`Sozlesme-${payment.payment_date}.pdf`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
@@ -466,6 +467,7 @@ export default function InformalPaymentsPage() {
                     {payment.contract_pdf_url ? (
                       <a
                         href={payment.contract_pdf_url}
+                        download={`Sozlesme-${payment.payment_date}.pdf`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-md transition-all hover:from-purple-600 hover:to-indigo-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
