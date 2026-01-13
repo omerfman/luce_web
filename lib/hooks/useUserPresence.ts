@@ -8,7 +8,6 @@ const HEARTBEAT_INTERVAL = 60000; // 60 seconds
 const ONLINE_THRESHOLD = 120000; // 2 minutes (if last_seen > 2 min, consider offline)
 
 export function useUserPresence(userId: string | undefined) {
-  const hasLoggedRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentUserIdRef = useRef<string | undefined>(userId);
 
@@ -46,15 +45,6 @@ export function useUserPresence(userId: string | undefined) {
     currentUserIdRef.current = userId;
     
     if (!userId) return;
-
-    const sessionKey = `user_session_${userId}`;
-    
-    // Only log login once per browser session
-    if (!hasLoggedRef.current && !sessionStorage.getItem(sessionKey)) {
-      hasLoggedRef.current = true;
-      sessionStorage.setItem(sessionKey, 'true');
-      logActivity('login', { page: window.location.pathname });
-    }
 
     // Start heartbeat interval (only updates last_seen, no logging)
     if (!intervalRef.current) {

@@ -501,7 +501,7 @@ export default function InvoicesPage() {
         invoice_type: qrMetadata?.type || null,
         invoice_ettn: qrMetadata?.etag || null,
         currency: qrMetadata?.currency || 'TRY',
-      });
+      }).select().single();
 
       if (error) throw error;
 

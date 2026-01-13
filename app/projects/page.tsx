@@ -95,7 +95,7 @@ export default function ProjectsPage() {
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
         status: formData.status,
-      });
+      }).select().single();
 
       if (error) throw error;
 
@@ -147,7 +147,9 @@ export default function ProjectsPage() {
           end_date: formData.end_date || null,
           status: formData.status,
         })
-        .eq('id', selectedProject.id);
+        .eq('id', selectedProject.id)
+        .select()
+        .single();
 
       if (error) throw error;
 
@@ -182,6 +184,7 @@ export default function ProjectsPage() {
         .eq('id', project.id);
 
       if (error) throw error;
+
       loadProjects();
     } catch (error: any) {
       console.error('Error deleting project:', error);
