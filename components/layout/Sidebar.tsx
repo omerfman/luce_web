@@ -17,6 +17,11 @@ export function Sidebar({ children }: SidebarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
+  
+  // Company admin veya activity_logs yetkisi olan kullanıcılar aktivite loglarını görebilir
+  const canViewActivityLogs = isSuperAdmin || 
+    hasPermission('activity_logs', 'read') || 
+    hasPermission('activity_logs', 'manage');
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, resource: null, action: null },
@@ -27,7 +32,7 @@ export function Sidebar({ children }: SidebarProps) {
     { name: 'Kullanıcılar', href: '/users', icon: UsersIcon, resource: 'users', action: 'read' },
     { name: 'Roller', href: '/roles', icon: ShieldIcon, resource: 'roles', action: 'read' },
     { name: 'Raporlar', href: '/reports', icon: ChartIcon, resource: 'reports', action: 'read' },
-    ...(isSuperAdmin ? [{ name: 'Aktivite Logları', href: '/activity-logs', icon: ClockIcon, resource: null, action: null }] : []),
+    ...(canViewActivityLogs ? [{ name: 'Aktivite Logları', href: '/activity-logs', icon: ClockIcon, resource: null, action: null }] : []),
   ];
 
   // Filter navigation items based on permissions

@@ -41,11 +41,11 @@ export default function ActivityLogsPage() {
 
   const itemsPerPage = 50;
   const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
-  const isCompanyAdmin = hasPermission('activity_logs', 'read');
-  const canViewLogs = isSuperAdmin || isCompanyAdmin || true; // Everyone can see their own logs
+  const isCompanyAdmin = hasPermission('activity_logs', 'read') || hasPermission('activity_logs', 'manage');
+  const canViewLogs = isSuperAdmin || isCompanyAdmin || !!user; // Herkes kendi loglarını görebilir
 
   useEffect(() => {
-    if (!authLoading && canViewLogs) {
+    if (!authLoading && user) {
       fetchActivityLogs();
       fetchStats();
     }

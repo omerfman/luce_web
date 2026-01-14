@@ -54,11 +54,17 @@ ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 -- RLS POLICIES
 -- ============================================================================
 
--- Policy 1: Users can view their own activity logs
-CREATE POLICY "Users can view their own activity logs"
+-- Policy 1: Super Admin can view all logs
+CREATE POLICY "Super Admin can view all activity logs"
 ON public.activity_logs FOR SELECT
 USING (
-  user_id = auth.uid()
+  EXISTS (
+    SELECT 1 FROM public.users u
+    INNER JOIN public.roles r ON u.role_id = r.id
+    WHERE u.id = auth.uid()
+    AND r.name = 'Super Admin'
+    AND r.company_id IS NULL
+  )
 );
 
 -- Policy 2: Company admins can view all logs in their company
@@ -75,16 +81,17 @@ USING (
   )
 );
 
--- Policy 3: Super Admin can view all logs
-CREATE POLICY "Super Admin can view all activity logs"
+-- Policy 3: Regular users can view their own activity logs
+CREATE POLICY "Users can view their own activity logs"
 ON public.activity_logs FOR SELECT
 USING (
-  EXISTS (
-    SELECT 1 FROM public.users u
-    INNER JOIN public.roles r ON u.role_id = r.id
-    WHERE u.id = auth.uid()
-    AND r.name = 'Super Admin'
-    AND r.company_id IS NULL
+  user_id = auth.uid()
+  AND NOT EXISTS (
+    -- Sadece özel izni olmayanlar için
+    SELECT 1 WHERE 
+      has_permission(auth.uid(), 'activity_logs', 'read')
+      OR has_permission(auth.uid(), 'activity_logs', 'manage')
+      OR has_permission(auth.uid(), '*', '*')
   )
 );
 
