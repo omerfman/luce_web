@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { InformalPayment, Project, Supplier } from '@/types';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ContractPaymentModal } from '@/components/informal-payments/ContractPaymentModal';
@@ -15,7 +16,8 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
 
-export default function InformalPaymentsPage() {
+function InformalPaymentsContent() {
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const [payments, setPayments] = useState<InformalPayment[]>([]);
   const [subcontractors, setSubcontractors] = useState<Supplier[]>([]); // Supplier tipine çevrildi
@@ -25,10 +27,13 @@ export default function InformalPaymentsPage() {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<InformalPayment | null>(null);
   
+  // Get project filter from URL
+  const projectFilter = searchParams.get('project');
+  
   // Filters
   const [filters, setFilters] = useState({
     supplierId: '',
-    projectId: '',
+    projectId: projectFilter || '',
     startDate: '',
     endDate: '',
     paymentMethod: '',
@@ -37,6 +42,28 @@ export default function InformalPaymentsPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Update filters when URL project parameter changes
+  useEffect(() => {
+    if (projectFilter) {
+      setFilters(prev => ({ ...prev, projectId: projectFilter }));
+      // Trigger filter when project parameter is present
+      const applyFilter = async () => {
+        try {
+          setLoading(true);
+          const filteredPayments = await getInformalPayments({ ...filters, projectId: projectFilter });
+          setPayments(filteredPayments);
+        } catch (error) {
+          console.error('Error filtering payments:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      if (user?.company_id) {
+        applyFilter();
+      }
+    }
+  }, [projectFilter, user?.company_id]);
 
   const loadData = async () => {
     if (!user?.company_id) return;
@@ -173,6 +200,12 @@ export default function InformalPaymentsPage() {
 
   const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
 
+  // Get selected project name for display
+  const selectedProject = projects.find(p => p.id === filters.projectId);
+  const pageTitle = selectedProject 
+    ? `${selectedProject.name} - Gayri Resmi Ödemeler` 
+    : 'Gayri Resmi Ödemeler';
+
   return (
     <Sidebar>
       <div className="p-6">
@@ -181,7 +214,7 @@ export default function InformalPaymentsPage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             {/* Title and Stats */}
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Gayri Resmi Ödemeler</h1>
+              <h1 className="text-3xl font-bold text-gray-900">{pageTitle}</h1>
               <div className="mt-3 flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100">
@@ -190,7 +223,7 @@ export default function InformalPaymentsPage() {
                     </svg>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 font-medium">Toplam Ödeme</p>
+                    <p className="text-xs text-gray-500 font-medium">{selectedProject ? 'Proje Toplamı' : 'Toplam Ödeme'}</p>
                     <p className="text-lg font-bold text-primary-600">{formatCurrency(totalAmount)}</p>
                   </div>
                 </div>
@@ -875,7 +908,13 @@ function EditIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-
+export default function InformalPaymentsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-secondary-600">Yükleniyor...</div></div>}>
+      <InformalPaymentsContent />
+    </Suspense>
+  );
+}
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">

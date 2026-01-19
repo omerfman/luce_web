@@ -414,6 +414,87 @@ export interface VKNGroup {
   items: BulkInvoiceItem[];
 }
 
+// ==================== PROJECT SUMMARY TYPES ====================
+
+export interface ProjectFinancialStats {
+  invoiceTotal: number;
+  invoiceCount: number;
+  vatTotal: number;
+  withholdingTotal: number;
+  informalPaymentTotal: number;
+  informalPaymentCount: number;
+  grandTotal: number;
+}
+
+export interface ProjectFileStats {
+  count: number;
+  totalSize: number;
+  byCategory: Record<string, { count: number; size: number }>;
+}
+
+export interface ProjectMonthlySpending {
+  month: string;
+  invoices: number;
+  informalPayments: number;
+  total: number;
+}
+
+export interface ProjectSupplierSpending {
+  name: string;
+  vkn?: string;
+  total: number;
+}
+
+export interface ProjectActivityLog {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  metadata: Record<string, any> | null;
+  created_at: string;
+  user?: {
+    name: string;
+    email: string;
+  };
+}
+
+export interface ProjectSummary {
+  project: {
+    id: string;
+    name: string;
+    description: string | null;
+    status: ProjectStatus;
+    start_date: string | null;
+    end_date: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  financial: {
+    grandTotal: number;
+    invoices: {
+      count: number;
+      totalAmount: number;
+      totalVAT: number;
+      totalWithholding: number;
+      totalGoodsServices: number;
+    };
+    informalPayments: {
+      count: number;
+      totalAmount: number;
+    };
+  };
+  files: ProjectFileStats;
+  activities: ProjectActivityLog[];
+  monthlySpending: Record<string, { invoices: number; informalPayments: number }>;
+  suppliers: Array<{
+    name: string;
+    vkn?: string;
+    total: number;
+    invoiceCount: number;
+    paymentCount: number;
+  }>;
+}
+
 // ==================== UTILITY TYPES ====================
 
 export type Prettify<T> = {

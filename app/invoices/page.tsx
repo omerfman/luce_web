@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Card } from '@/components/ui/Card';
@@ -20,8 +20,9 @@ import * as XLSX from 'xlsx';
 
 type TabType = 'pending' | 'assigned' | 'all';
 
-export default function InvoicesPage() {
+function InvoicesContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, company, hasPermission } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -40,12 +41,16 @@ export default function InvoicesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
   const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string, payment_date: string}>>([{type: '', amount: '', payment_date: ''}]);
+  
+  // Get project filter from URL
+  const projectFilter = searchParams.get('project');
+  
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
     supplierName: '',
     invoiceNumber: '',
-    projectId: '',
+    projectId: projectFilter || '',
   });
   
   const [sortConfig, setSortConfig] = useState<{
@@ -85,6 +90,14 @@ export default function InvoicesPage() {
     
     return data.signedUrl;
   }
+
+  // Update filters when URL project parameter changes
+  useEffect(() => {
+    if (projectFilter) {
+      setFilters(prev => ({ ...prev, projectId: projectFilter }));
+      setShowFilters(true); // Show filters when coming from project page
+    }
+  }, [projectFilter]);
 
   useEffect(() => {
     if (company) {
@@ -862,14 +875,28 @@ export default function InvoicesPage() {
   const pendingCount = invoices.filter(inv => !inv.project_links || inv.project_links.length === 0).length;
   const assignedCount = invoices.filter(inv => inv.project_links && inv.project_links.length > 0).length;
 
+  // Get selected project name for display
+  const selectedProject = projects.find(p => p.id === filters.projectId);
+  const pageTitle = selectedProject 
+    ? `${selectedProject.name} - Faturalar` 
+    : 'Faturalar';
+
   return (
     <Sidebar>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-secondary-900">Faturalar</h1>
+            <h1 className="text-2xl font-bold text-secondary-900">{pageTitle}</h1>
             <p className="mt-1 text-sm text-secondary-600">
-              {pendingCount} bekleyen, {assignedCount} atanmış fatura
+              {selectedProject ? (
+                <>
+                  {sortedInvoices.length} fatura bu projeye atanmış
+                </>
+              ) : (
+                <>
+                  {pendingCount} bekleyen, {assignedCount} atanmış fatura
+                </>
+              )}
             </p>
           </div>
           <div className="flex gap-3">
@@ -1700,5 +1727,13 @@ export default function InvoicesPage() {
         </form>
       </Modal>
     </Sidebar>
+  );
+}
+
+export default function InvoicesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="text-secondary-600">Yükleniyor...</div></div>}>
+      <InvoicesContent />
+    </Suspense>
   );
 }
