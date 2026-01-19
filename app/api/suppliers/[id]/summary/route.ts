@@ -54,27 +54,47 @@ export async function GET(
       return NextResponse.json({ error: 'Supplier not found', details: supplierError }, { status: 404 });
     }
 
-    console.log('Supplier found:', supplier.name);
+    console.log('Supplier found:', supplier.name, 'VKN:', supplier.vkn);
 
     // Get invoices related to this supplier
-    // Search by both supplier_id and supplier_vkn (since older invoices may only have VKN)
-    let invoicesQuery = supabase
-      .from('invoices')
-      .select(`
-        *,
-        project:projects(id, name, project_code)
-      `)
-      .eq('company_id', companyId)
-      .order('invoice_date', { ascending: false });
+    // Search by supplier_vkn (primary) or supplier_name (fallback)
+    // Note: Most invoices use VKN, not supplier_id
+    let invoices: any[] = [];
+    let invoicesError: any = null;
     
-    // Add OR condition for supplier_id or supplier_vkn
     if (supplier.vkn) {
-      invoicesQuery = invoicesQuery.or(`supplier_id.eq.${supplierId},supplier_vkn.eq.${supplier.vkn}`);
-    } else {
-      invoicesQuery = invoicesQuery.eq('supplier_id', supplierId);
+      // First try with VKN
+      const { data: vknInvoices, error: vknError } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          project:projects(id, name, project_code)
+        `)
+        .eq('company_id', companyId)
+        .eq('supplier_vkn', supplier.vkn)
+        .order('invoice_date', { ascending: false });
+      
+      invoices = vknInvoices || [];
+      invoicesError = vknError;
+      console.log('Invoices found by VKN:', invoices.length);
     }
     
-    const { data: invoices, error: invoicesError } = await invoicesQuery;
+    // If no invoices found by VKN, try by supplier name
+    if (invoices.length === 0 && supplier.name) {
+      const { data: nameInvoices, error: nameError } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          project:projects(id, name, project_code)
+        `)
+        .eq('company_id', companyId)
+        .eq('supplier_name', supplier.name)
+        .order('invoice_date', { ascending: false });
+      
+      invoices = nameInvoices || [];
+      invoicesError = nameError;
+      console.log('Invoices found by name:', invoices.length);
+    }
 
     if (invoicesError) {
       console.error('Error fetching invoices:', invoicesError);
