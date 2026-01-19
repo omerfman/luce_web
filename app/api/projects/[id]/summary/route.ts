@@ -180,7 +180,7 @@ export async function GET(
     const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount;
 
     // Aggregate suppliers by VKN and name
-    const supplierMap = new Map<string, { name: string; vkn?: string; total: number; invoiceCount: number; paymentCount: number }>();
+    const supplierMap = new Map<string, { supplierId?: string; name: string; vkn?: string; total: number; invoiceCount: number; paymentCount: number }>();
 
     // Process invoices
     invoices.forEach((invoice: any) => {
@@ -192,6 +192,7 @@ export async function GET(
         existing.invoiceCount++;
       } else {
         supplierMap.set(key, {
+          supplierId: invoice.supplier_id || undefined,
           name: invoice.supplier_name || 'Bilinmeyen',
           vkn: invoice.supplier_vkn,
           total: invoice.amount || 0,
@@ -203,17 +204,25 @@ export async function GET(
 
     // Process informal payments
     informalPayments?.forEach((payment) => {
-      const supplier = Array.isArray(payment.supplier) ? payment.supplier[0] : payment.supplier;
-      const key = supplier?.vkn || supplier?.name || 'Bilinmeyen';
+      const supplier: any = Array.isArray(payment.supplier) ? payment.supplier[0] : payment.supplier;
+      const supplierName = supplier?.name || 'Bilinmeyen';
+      const supplierVkn = supplier?.vkn;
+      const supplierId = supplier?.id;
+      const key = supplierVkn || supplierName;
       const existing = supplierMap.get(key);
       
       if (existing) {
         existing.total += payment.amount || 0;
         existing.paymentCount++;
+        // Update supplierId if not already set
+        if (!existing.supplierId && supplierId) {
+          existing.supplierId = supplierId;
+        }
       } else {
         supplierMap.set(key, {
-          name: supplier?.name || 'Bilinmeyen',
-          vkn: supplier?.vkn,
+          supplierId: supplierId || undefined,
+          name: supplierName,
+          vkn: supplierVkn,
           total: payment.amount || 0,
           invoiceCount: 0,
           paymentCount: 1,

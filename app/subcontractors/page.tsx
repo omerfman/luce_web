@@ -642,17 +642,30 @@ export default function SubcontractorsPage() {
                       />
                     </td>
                     <td className="table-cell font-medium">
-                      {editingSupplier === supplier.id ? (
-                        <input
-                          type="text"
-                          value={editFormData.name}
-                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                          placeholder="Firma adı"
-                        />
-                      ) : (
-                        supplier.name
-                      )}
+                      <div className="flex items-center gap-2">
+                        {editingSupplier === supplier.id ? (
+                          <input
+                            type="text"
+                            value={editFormData.name}
+                            onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="Firma adı"
+                          />
+                        ) : (
+                          <>
+                            <span>{supplier.name}</span>
+                            <button
+                              onClick={() => window.open(`/suppliers/${supplier.id}`, '_blank')}
+                              className="ml-2 inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                              title="Firma detaylarını görüntüle">
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td className="table-cell text-secondary-600">
                       {editingSupplier === supplier.id ? (
@@ -837,17 +850,30 @@ export default function SubcontractorsPage() {
                       />
                     </td>
                     <td className="table-cell font-medium">
-                      {editingSupplier === supplier.id ? (
-                        <input
-                          type="text"
-                          value={editFormData.name}
-                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                          className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                          placeholder="Firma adı"
-                        />
-                      ) : (
-                        supplier.name
-                      )}
+                      <div className="flex items-center gap-2">
+                        {editingSupplier === supplier.id ? (
+                          <input
+                            type="text"
+                            value={editFormData.name}
+                            onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                            className="w-full rounded border border-secondary-300 px-2 py-1 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            placeholder="Firma adı"
+                          />
+                        ) : (
+                          <>
+                            <span>{supplier.name}</span>
+                            <button
+                              onClick={() => window.open(`/suppliers/${supplier.id}`, '_blank')}
+                              className="ml-2 inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                              title="Firma detaylarını görüntüle">
+                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td className="table-cell text-secondary-600">
                       {editingSupplier === supplier.id ? (

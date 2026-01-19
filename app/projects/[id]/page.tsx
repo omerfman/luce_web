@@ -419,6 +419,7 @@ export default function ProjectSummaryPage() {
                   <th className="text-right py-4 px-4 font-bold text-gray-900">Fatura</th>
                   <th className="text-right py-4 px-4 font-bold text-gray-900">Ödeme</th>
                   <th className="text-right py-4 px-4 font-bold text-gray-900">Toplam</th>
+                  <th className="text-right py-4 px-4 font-bold text-gray-900">Detay</th>
                 </tr>
               </thead>
               <tbody>
@@ -448,6 +449,15 @@ export default function ProjectSummaryPage() {
                     <td className="py-4 px-4 text-right font-bold text-gray-900">
                       {formatCurrency(supplier.total)}
                     </td>
+                    <td className="py-4 px-4 text-right">
+                      {supplier.supplierId && (
+                        <button
+                          onClick={() => router.push(`/suppliers/${supplier.supplierId}`)}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+                          Görüntüle
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -465,6 +475,7 @@ export default function ProjectSummaryPage() {
                   <td className="py-5 px-4 text-right text-gray-900 text-base font-bold">
                     {formatCurrency(suppliers.reduce((sum, s) => sum + s.total, 0))}
                   </td>
+                  <td className="py-5 px-4"></td>
                 </tr>
               </tfoot>
             </table>

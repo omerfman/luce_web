@@ -487,6 +487,7 @@ export interface ProjectSummary {
   activities: ProjectActivityLog[];
   monthlySpending: Record<string, { invoices: number; informalPayments: number }>;
   suppliers: Array<{
+    supplierId?: string;
     name: string;
     vkn?: string;
     total: number;
