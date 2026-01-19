@@ -3,17 +3,25 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const supabase = await createServerClient();
+    
+    // Handle both Promise and direct params (Next.js 14 compatibility)
+    const params = await Promise.resolve(context.params);
     const supplierId = params.id;
+    
+    console.log('Supplier Summary API called for ID:', supplierId);
 
     // Get authenticated user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    console.log('Authenticated user:', user.id);
 
     // Get user's company_id
     const { data: userData, error: userDataError } = await supabase
@@ -23,10 +31,12 @@ export async function GET(
       .single();
 
     if (userDataError || !userData) {
+      console.error('User data error:', userDataError);
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const companyId = (userData as any).company_id;
+    console.log('Company ID:', companyId);
 
     // Get supplier details
     const { data: supplier, error: supplierError } = await supabase
@@ -40,23 +50,37 @@ export async function GET(
       .single();
 
     if (supplierError || !supplier) {
-      return NextResponse.json({ error: 'Supplier not found' }, { status: 404 });
+      console.error('Supplier error:', supplierError);
+      return NextResponse.json({ error: 'Supplier not found', details: supplierError }, { status: 404 });
     }
 
+    console.log('Supplier found:', supplier.name);
+
     // Get invoices related to this supplier
-    const { data: invoices, error: invoicesError } = await supabase
+    // Search by both supplier_id and supplier_vkn (since older invoices may only have VKN)
+    let invoicesQuery = supabase
       .from('invoices')
       .select(`
         *,
         project:projects(id, name, project_code)
       `)
-      .eq('supplier_id', supplierId)
       .eq('company_id', companyId)
       .order('invoice_date', { ascending: false });
+    
+    // Add OR condition for supplier_id or supplier_vkn
+    if (supplier.vkn) {
+      invoicesQuery = invoicesQuery.or(`supplier_id.eq.${supplierId},supplier_vkn.eq.${supplier.vkn}`);
+    } else {
+      invoicesQuery = invoicesQuery.eq('supplier_id', supplierId);
+    }
+    
+    const { data: invoices, error: invoicesError } = await invoicesQuery;
 
     if (invoicesError) {
       console.error('Error fetching invoices:', invoicesError);
     }
+    
+    console.log('Invoices found:', invoices?.length || 0);
 
     // Calculate invoice financials
     const invoiceStats = {
@@ -65,6 +89,8 @@ export async function GET(
       totalTax: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.tax_amount) || 0), 0) || 0,
       totalWithholding: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.withholding_amount) || 0), 0) || 0,
     };
+    
+    console.log('Invoice stats:', invoiceStats);
 
     // Get informal payments related to this supplier
     // Check if supplier has a subcontractor relation
@@ -75,6 +101,7 @@ export async function GET(
     };
 
     if ((supplier as any).subcontractor_id) {
+      console.log('Checking informal payments for subcontractor_id:', (supplier as any).subcontractor_id);
       const { data: payments, error: paymentsError } = await supabase
         .from('informal_payments')
         .select(`
@@ -89,6 +116,7 @@ export async function GET(
       if (paymentsError) {
         console.error('Error fetching informal payments:', paymentsError);
       } else {
+        console.log('Informal payments found:', payments?.length || 0);
         informalPayments = payments || [];
         informalPaymentStats = {
           count: payments?.length || 0,
@@ -99,6 +127,9 @@ export async function GET(
 
     // Calculate grand total
     const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount;
+    
+    console.log('Grand total:', grandTotal);
+    console.log('Returning response with', invoices?.length || 0, 'invoices and', informalPayments?.length || 0, 'payments');
 
     // Get project list (unique projects)
     const projectsSet = new Set();
