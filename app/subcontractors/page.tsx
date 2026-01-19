@@ -452,7 +452,19 @@ export default function SubcontractorsPage() {
                           placeholder="Firma adı"
                         />
                       ) : (
-                        supplier.name
+                        <div className="flex items-center">
+                          <span>{supplier.name}</span>
+                          <button
+                            onClick={() => window.open(`/suppliers/${supplier.id}`, '_blank')}
+                            className="ml-2 inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-all hover:bg-blue-100"
+                            title="Firma özetini görüntüle"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 15 12" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M1 6s2.5-4 6.5-4S14 6 14 6s-2.5 4-6.5 4S1 6 1 6z" />
+                              <circle cx="7.5" cy="6" r="2" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} />
+                            </svg>
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td className="table-cell text-secondary-600">
