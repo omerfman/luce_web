@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { supabase } from '@/lib/supabase/client';
 
 interface SupplierSummary {
   supplier: any;
@@ -46,6 +47,19 @@ export default function SupplierDetailPage() {
       loadSummary();
     }
   }, [supplierId]);
+
+  async function getSignedUrl(path: string): Promise<string> {
+    const { data, error } = await supabase.storage
+      .from('invoices')
+      .createSignedUrl(path, 3600);
+    
+    if (error) {
+      console.error('Error creating signed URL:', error);
+      return '#';
+    }
+    
+    return data.signedUrl;
+  }
 
   async function loadSummary() {
     try {
@@ -448,14 +462,17 @@ export default function SupplierDetailPage() {
                           </td>
                           <td className="py-4 px-4 text-center">
                             {isInvoice && transaction.file_path ? (
-                              <a
-                                href={`https://res.cloudinary.com/dpqwbueoj/image/upload/${transaction.file_path}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                onClick={async () => {
+                                  const url = await getSignedUrl(transaction.file_path);
+                                  if (url !== '#') {
+                                    window.open(url, '_blank');
+                                  }
+                                }}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
                                 title="PDF'i Görüntüle">
                                 📄 PDF
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-gray-400 text-xs">-</span>
                             )}
