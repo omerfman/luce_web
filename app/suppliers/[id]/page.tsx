@@ -41,6 +41,7 @@ export default function SupplierDetailPage() {
   const [activeTab, setActiveTab] = useState<'invoices' | 'payments' | 'all'>('all');
 
   useEffect(() => {
+    console.log('🔍 [Supplier Detail] useEffect triggered, supplierId:', supplierId);
     if (supplierId) {
       loadSummary();
     }
@@ -49,15 +50,35 @@ export default function SupplierDetailPage() {
   async function loadSummary() {
     try {
       setLoading(true);
+      console.log('📡 [Supplier Detail] Fetching data for supplier:', supplierId);
+      console.log('📡 [Supplier Detail] API URL:', `/api/suppliers/${supplierId}/summary`);
+      
       const response = await fetch(`/api/suppliers/${supplierId}/summary`);
       
+      console.log('📡 [Supplier Detail] Response status:', response.status);
+      console.log('📡 [Supplier Detail] Response ok:', response.ok);
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Supplier Detail] Error response:', errorText);
         throw new Error('Firma bilgileri yüklenemedi');
       }
 
       const data = await response.json();
+      console.log('✅ [Supplier Detail] Data received:', data);
+      console.log('✅ [Supplier Detail] Financial summary:', data.financial);
+      console.log('✅ [Supplier Detail] Invoices count:', data.invoices?.length || 0);
+      console.log('✅ [Supplier Detail] Payments count:', data.informalPayments?.length || 0);
+      console.log('✅ [Supplier Detail] Projects count:', data.projects?.length || 0);
+      if (data.projects?.length > 0) {
+        console.log('✅ [Supplier Detail] Projects:', data.projects);
+      } else {
+        console.log('⚠️ [Supplier Detail] No projects found in response');
+      }
+      
       setSummary(data);
     } catch (err: any) {
+      console.error('❌ [Supplier Detail] Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -358,14 +379,45 @@ export default function SupplierDetailPage() {
                       <th className="text-left py-4 px-4 font-bold text-gray-900 hidden sm:table-cell">Proje</th>
                       <th className="text-left py-4 px-4 font-bold text-gray-900 hidden md:table-cell">Açıklama</th>
                       <th className="text-right py-4 px-4 font-bold text-gray-900">Tutar</th>
+                      <th className="text-center py-4 px-4 font-bold text-gray-900">İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredTransactions.map((transaction: any, index: number) => {
-                      const isInvoice = transaction.type === 'invoice' || transaction.invoice_no;
+                      const isInvoice = transaction.type === 'invoice' || transaction.invoice_number;
                       const date = isInvoice ? transaction.invoice_date : transaction.payment_date;
-                      const amount = isInvoice ? transaction.total_amount : transaction.amount;
-                      const description = isInvoice ? transaction.invoice_no : transaction.description;
+                      // Use 'amount' field for both invoices and payments
+                      const amount = transaction.amount;
+                      const description = isInvoice ? transaction.invoice_number : transaction.description;
+                      
+                      // For invoices: get projects from project_links array (many-to-many)
+                      // For payments: use direct project_id (one-to-one)
+                      let projectNames = '';
+                      if (isInvoice && transaction.project_links && transaction.project_links.length > 0) {
+                        // Invoice can have multiple projects
+                        projectNames = transaction.project_links
+                          .map((link: any) => link.project?.name)
+                          .filter(Boolean)
+                          .join(', ');
+                      } else if (!isInvoice && transaction.project_id) {
+                        // Payment has single project
+                        const project = projects.find((p: any) => p.id === transaction.project_id);
+                        projectNames = project?.name || '';
+                      }
+
+                      // Detailed logging for debugging (first transaction only)
+                      if (index === 0) {
+                        console.log('🔍 [Transaction Debug] First transaction:', {
+                          type: isInvoice ? 'invoice' : 'payment',
+                          id: transaction.id,
+                          amount,
+                          description,
+                          project_links: transaction.project_links,
+                          project_id: transaction.project_id,
+                          resolved_projects: projectNames
+                        });
+                        console.log('🔍 [Transaction Debug] Available projects:', projects.map((p: any) => ({ id: p.id, name: p.name })));
+                      }
 
                       return (
                         <tr key={`${isInvoice ? 'inv' : 'pay'}-${transaction.id}-${index}`} className="border-b border-gray-200 hover:bg-gray-50 transition-all">
@@ -384,7 +436,7 @@ export default function SupplierDetailPage() {
                             {formatDate(date)}
                           </td>
                           <td className="py-4 px-4 text-gray-700 hidden sm:table-cell">
-                            {transaction.project?.name || '-'}
+                            {projectNames || <span className="text-gray-400 italic">Atanmamış</span>}
                           </td>
                           <td className="py-4 px-4 text-gray-600 hidden md:table-cell">
                             <span className="line-clamp-1" title={description}>
@@ -394,19 +446,33 @@ export default function SupplierDetailPage() {
                           <td className="py-4 px-4 text-right font-bold text-gray-900">
                             {formatCurrency(parseFloat(amount))}
                           </td>
+                          <td className="py-4 px-4 text-center">
+                            {isInvoice && transaction.file_path ? (
+                              <a
+                                href={`https://res.cloudinary.com/dpqwbueoj/image/upload/${transaction.file_path}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                                title="PDF'i Görüntüle">
+                                📄 PDF
+                              </a>
+                            ) : (
+                              <span className="text-gray-400 text-xs">-</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-200 font-bold border-t-2 border-gray-300">
-                      <td className="py-5 px-4 text-gray-900 font-bold" colSpan={4}>
+                      <td className="py-5 px-4 text-gray-900 font-bold" colSpan={5}>
                         Toplam ({filteredTransactions.length} işlem)
                       </td>
                       <td className="py-5 px-4 text-right text-gray-900 text-base font-bold">
                         {formatCurrency(
                           filteredTransactions.reduce((sum: number, t: any) => {
-                            const amount = t.type === 'invoice' || t.invoice_no ? t.total_amount : t.amount;
+                            const amount = t.amount;
                             return sum + (parseFloat(amount) || 0);
                           }, 0)
                         )}

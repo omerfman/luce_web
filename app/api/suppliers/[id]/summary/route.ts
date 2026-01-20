@@ -41,10 +41,7 @@ export async function GET(
     // Get supplier details
     const { data: supplier, error: supplierError } = await supabase
       .from('suppliers')
-      .select(`
-        *,
-        subcontractor:subcontractors!subcontractor_id(*)
-      `)
+      .select('*')
       .eq('id', supplierId)
       .eq('company_id', companyId)
       .single();
@@ -63,12 +60,16 @@ export async function GET(
     let invoicesError: any = null;
     
     if (supplier.vkn) {
-      // First try with VKN
+      // First try with VKN - include project links from junction table
       const { data: vknInvoices, error: vknError } = await supabase
         .from('invoices')
         .select(`
           *,
-          project:projects(id, name, project_code)
+          project_links:invoice_project_links(
+            id,
+            project_id,
+            project:projects(id, name)
+          )
         `)
         .eq('company_id', companyId)
         .eq('supplier_vkn', supplier.vkn)
@@ -85,7 +86,11 @@ export async function GET(
         .from('invoices')
         .select(`
           *,
-          project:projects(id, name, project_code)
+          project_links:invoice_project_links(
+            id,
+            project_id,
+            project:projects(id, name)
+          )
         `)
         .eq('company_id', companyId)
         .eq('supplier_name', supplier.name)
@@ -101,48 +106,50 @@ export async function GET(
     }
     
     console.log('Invoices found:', invoices?.length || 0);
+    
+    // Log first invoice to see structure
+    if (invoices && invoices.length > 0) {
+      console.log('First invoice data:', JSON.stringify(invoices[0], null, 2));
+      console.log('First invoice keys:', Object.keys(invoices[0]));
+    }
 
     // Calculate invoice financials
+    // Database uses: amount (total), goods_services_total, vat_amount, withholding_amount
     const invoiceStats = {
       count: invoices?.length || 0,
-      totalAmount: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.total_amount) || 0), 0) || 0,
-      totalTax: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.tax_amount) || 0), 0) || 0,
+      totalAmount: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0) || 0,
+      totalTax: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.vat_amount) || 0), 0) || 0,
       totalWithholding: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.withholding_amount) || 0), 0) || 0,
     };
     
     console.log('Invoice stats:', invoiceStats);
 
     // Get informal payments related to this supplier
-    // Check if supplier has a subcontractor relation
+    // Informal payments use supplier_id (not subcontractor_id)
     let informalPayments: any[] = [];
     let informalPaymentStats = {
       count: 0,
       totalAmount: 0,
     };
 
-    if ((supplier as any).subcontractor_id) {
-      console.log('Checking informal payments for subcontractor_id:', (supplier as any).subcontractor_id);
-      const { data: payments, error: paymentsError } = await supabase
-        .from('informal_payments')
-        .select(`
-          *,
-          project:projects(id, name, project_code),
-          subcontractor:subcontractors(id, name)
-        `)
-        .eq('subcontractor_id', (supplier as any).subcontractor_id)
-        .eq('company_id', companyId)
-        .order('payment_date', { ascending: false });
+    // Check if this supplier has any informal payments
+    console.log('Checking informal payments for supplier_id:', supplierId);
+    const { data: payments, error: paymentsError } = await supabase
+      .from('informal_payments')
+      .select('*')
+      .eq('supplier_id', supplierId)
+      .eq('company_id', companyId)
+      .order('payment_date', { ascending: false });
 
-      if (paymentsError) {
-        console.error('Error fetching informal payments:', paymentsError);
-      } else {
-        console.log('Informal payments found:', payments?.length || 0);
-        informalPayments = payments || [];
-        informalPaymentStats = {
-          count: payments?.length || 0,
-          totalAmount: payments?.reduce((sum: number, pay: any) => sum + (parseFloat(pay.amount) || 0), 0) || 0,
-        };
-      }
+    if (paymentsError) {
+      console.error('Error fetching informal payments:', paymentsError);
+    } else {
+      console.log('Informal payments found:', payments?.length || 0);
+      informalPayments = payments || [];
+      informalPaymentStats = {
+        count: payments?.length || 0,
+        totalAmount: payments?.reduce((sum: number, pay: any) => sum + (parseFloat(pay.amount) || 0), 0) || 0,
+      };
     }
 
     // Calculate grand total
@@ -151,20 +158,32 @@ export async function GET(
     console.log('Grand total:', grandTotal);
     console.log('Returning response with', invoices?.length || 0, 'invoices and', informalPayments?.length || 0, 'payments');
 
-    // Get project list (unique projects)
-    const projectsSet = new Set();
+    // Get unique project IDs from invoice_project_links and informal_payments
+    const projectIds = new Set<string>();
+    
+    // Collect projects from invoice links (many-to-many)
     invoices?.forEach((inv: any) => {
-      if (inv.project) {
-        projectsSet.add(JSON.stringify(inv.project));
-      }
+      inv.project_links?.forEach((link: any) => {
+        if (link.project_id) projectIds.add(link.project_id);
+      });
     });
+    
+    // Collect projects from informal payments (direct project_id)
     informalPayments?.forEach((pay: any) => {
-      if (pay.project) {
-        projectsSet.add(JSON.stringify(pay.project));
-      }
+      if (pay.project_id) projectIds.add(pay.project_id);
     });
 
-    const projects = Array.from(projectsSet).map((p: any) => JSON.parse(p));
+    // Fetch project details if we have any project IDs
+    let projects: any[] = [];
+    if (projectIds.size > 0) {
+      const { data: projectsData } = await supabase
+        .from('projects')
+        .select('id, name')
+        .in('id', Array.from(projectIds));
+      
+      projects = projectsData || [];
+      console.log('Projects found:', projects.length);
+    }
 
     // Monthly spending data
     const monthlyData = new Map<string, { invoices: number; informalPayments: number }>();
@@ -172,7 +191,7 @@ export async function GET(
     invoices?.forEach((inv: any) => {
       const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
       const current = monthlyData.get(month) || { invoices: 0, informalPayments: 0 };
-      current.invoices += parseFloat(inv.total_amount) || 0;
+      current.invoices += parseFloat(inv.amount) || 0;
       monthlyData.set(month, current);
     });
 
