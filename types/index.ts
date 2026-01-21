@@ -217,6 +217,10 @@ export type PermissionResource =
   | 'roles'
   | 'companies'
   | 'reports'
+  | 'informal_payments'
+  | 'subcontractors'
+  | 'suppliers'
+  | 'activity_logs'
   | '*';
 export type PermissionScope = 'own' | 'company' | 'all';
 

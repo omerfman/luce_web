@@ -85,6 +85,10 @@ export function getPermissionDescription(permission: Permission): string {
     projects: 'Projeler',
     invoices: 'Faturalar',
     reports: 'Raporlar',
+    informal_payments: 'Gayri Resmi Ödemeler',
+    subcontractors: 'Taşeronlar',
+    suppliers: 'Tedarikçiler',
+    activity_logs: 'Aktivite Logları',
   };
 
   const actionNames: Record<string, string> = {
@@ -93,7 +97,8 @@ export function getPermissionDescription(permission: Permission): string {
     update: 'Güncelleme',
     delete: 'Silme',
     manage: 'Tam Yönetim',
-    assign_project: 'Projeye Atama',
+    assign: 'Atama',
+    export: 'Dışa Aktarma',
   };
 
   const scopeNames: Record<string, string> = {

@@ -9,35 +9,7 @@ import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabase/client';
 import { Role, Permission } from '@/types';
-
-// Only company-scoped permissions (Super Admin excluded)
-// Admins can only grant permissions within their company scope
-const AVAILABLE_PERMISSIONS = [
-  { resource: 'users' as const, action: 'create' as const, scope: 'company' as const, label: 'Kullanıcı Oluştur (Şirket)' },
-  { resource: 'users' as const, action: 'read' as const, scope: 'company' as const, label: 'Kullanıcı Görüntüle (Şirket)' },
-  { resource: 'users' as const, action: 'update' as const, scope: 'company' as const, label: 'Kullanıcı Düzenle (Şirket)' },
-  { resource: 'users' as const, action: 'delete' as const, scope: 'company' as const, label: 'Kullanıcı Sil (Şirket)' },
-  { resource: 'users' as const, action: 'assign' as const, scope: 'company' as const, label: 'Kullanıcı Atama (Şirket)' },
-  { resource: 'projects' as const, action: 'create' as const, scope: 'company' as const, label: 'Proje Oluştur (Şirket)' },
-  { resource: 'projects' as const, action: 'read' as const, scope: 'company' as const, label: 'Proje Görüntüle (Şirket)' },
-  { resource: 'projects' as const, action: 'update' as const, scope: 'company' as const, label: 'Proje Düzenle (Şirket)' },
-  { resource: 'projects' as const, action: 'delete' as const, scope: 'company' as const, label: 'Proje Sil (Şirket)' },
-  { resource: 'projects' as const, action: 'assign' as const, scope: 'company' as const, label: 'Proje Atama (Şirket)' },
-  { resource: 'invoices' as const, action: 'create' as const, scope: 'company' as const, label: 'Fatura Oluştur (Şirket)' },
-  { resource: 'invoices' as const, action: 'read' as const, scope: 'company' as const, label: 'Fatura Görüntüle (Şirket)' },
-  { resource: 'invoices' as const, action: 'update' as const, scope: 'company' as const, label: 'Fatura Düzenle (Şirket)' },
-  { resource: 'invoices' as const, action: 'delete' as const, scope: 'company' as const, label: 'Fatura Sil (Şirket)' },
-  { resource: 'invoices' as const, action: 'assign' as const, scope: 'company' as const, label: 'Faturayı Projeye Atama (Şirket)' },
-  { resource: 'invoices' as const, action: 'export' as const, scope: 'company' as const, label: 'Fatura Raporu Dışa Aktar (Şirket)' },
-  { resource: 'roles' as const, action: 'create' as const, scope: 'company' as const, label: 'Rol Oluştur (Şirket)' },
-  { resource: 'roles' as const, action: 'read' as const, scope: 'company' as const, label: 'Rol Görüntüle (Şirket)' },
-  { resource: 'roles' as const, action: 'update' as const, scope: 'company' as const, label: 'Rol Düzenle (Şirket)' },
-  { resource: 'roles' as const, action: 'delete' as const, scope: 'company' as const, label: 'Rol Sil (Şirket)' },
-  { resource: 'companies' as const, action: 'read' as const, scope: 'company' as const, label: 'Şirket Bilgisi Görüntüle' },
-  { resource: 'companies' as const, action: 'update' as const, scope: 'company' as const, label: 'Şirket Bilgisi Düzenle' },
-  { resource: 'reports' as const, action: 'read' as const, scope: 'company' as const, label: 'Rapor Görüntüle (Şirket)' },
-  { resource: 'reports' as const, action: 'create' as const, scope: 'company' as const, label: 'Rapor Oluştur (Şirket)' },
-];
+import { PERMISSION_GROUPS, ACTION_LABELS, ACTION_DESCRIPTIONS, ROLE_TEMPLATES } from '@/lib/permission-groups';
 
 export default function RolesPage() {
   const { company, hasPermission } = useAuth();
@@ -45,6 +17,7 @@ export default function RolesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [formData, setFormData] = useState({
     name: '',
     permissions: [] as Permission[],
@@ -85,6 +58,7 @@ export default function RolesPage() {
 
   function openCreateModal() {
     setSelectedRole(null);
+    setSelectedTemplate('');
     setFormData({
       name: '',
       permissions: [],
@@ -94,6 +68,7 @@ export default function RolesPage() {
 
   function openEditModal(role: Role) {
     setSelectedRole(role);
+    setSelectedTemplate('');
     setFormData({
       name: role.name,
       permissions: role.permissions,
@@ -101,16 +76,27 @@ export default function RolesPage() {
     setIsModalOpen(true);
   }
 
+  function applyTemplate(templateKey: string) {
+    const template = ROLE_TEMPLATES[templateKey as keyof typeof ROLE_TEMPLATES];
+    if (template) {
+      setFormData({
+        name: formData.name || template.name,
+        permissions: [...template.permissions],
+      });
+      setSelectedTemplate(templateKey);
+    }
+  }
+
   function togglePermission(permission: Permission) {
     const exists = formData.permissions.some(
-      (p) => p.resource === permission.resource && p.action === permission.action
+      (p) => p.resource === permission.resource && p.action === permission.action && p.scope === permission.scope
     );
 
     if (exists) {
       setFormData({
         ...formData,
         permissions: formData.permissions.filter(
-          (p) => !(p.resource === permission.resource && p.action === permission.action)
+          (p) => !(p.resource === permission.resource && p.action === permission.action && p.scope === permission.scope)
         ),
       });
     } else {
@@ -121,10 +107,51 @@ export default function RolesPage() {
     }
   }
 
+  function toggleGroupPermissions(groupId: string, checked: boolean) {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return;
+
+    if (checked) {
+      // Add all group permissions
+      const newPermissions = [...formData.permissions];
+      group.permissions.forEach(perm => {
+        if (!newPermissions.some(p => 
+          p.resource === perm.resource && p.action === perm.action && p.scope === perm.scope
+        )) {
+          newPermissions.push(perm);
+        }
+      });
+      setFormData({ ...formData, permissions: newPermissions });
+    } else {
+      // Remove all group permissions
+      setFormData({
+        ...formData,
+        permissions: formData.permissions.filter(p =>
+          !group.permissions.some(gp =>
+            gp.resource === p.resource && gp.action === p.action && gp.scope === p.scope
+          )
+        ),
+      });
+    }
+  }
+
   function isPermissionSelected(permission: Permission): boolean {
     return formData.permissions.some(
-      (p) => p.resource === permission.resource && p.action === permission.action
+      (p) => p.resource === permission.resource && p.action === permission.action && p.scope === permission.scope
     );
+  }
+
+  function isGroupFullySelected(groupId: string): boolean {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return false;
+    return group.permissions.every(perm => isPermissionSelected(perm));
+  }
+
+  function isGroupPartiallySelected(groupId: string): boolean {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return false;
+    const selectedCount = group.permissions.filter(perm => isPermissionSelected(perm)).length;
+    return selectedCount > 0 && selectedCount < group.permissions.length;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -238,30 +265,30 @@ export default function RolesPage() {
                         )}
                       </div>
                     )}
-                </div>
+                  </div>
 
-                <div className="border-t border-secondary-200 pt-3">
-                  <p className="text-xs font-medium text-secondary-700 mb-2">
-                    Yetkiler ({role.permissions.length})
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {role.permissions.slice(0, 5).map((perm, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700"
-                      >
-                        {perm.resource === '*' ? 'Tümü' : perm.resource}
-                      </span>
-                    ))}
-                    {role.permissions.length > 5 && (
-                      <span className="text-xs text-secondary-500">
-                        +{role.permissions.length - 5} daha
-                      </span>
-                    )}
+                  <div className="border-t border-secondary-200 pt-3">
+                    <p className="text-xs font-medium text-secondary-700 mb-2">
+                      Yetkiler ({role.permissions.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {role.permissions.slice(0, 5).map((perm, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700"
+                        >
+                          {perm.resource === '*' ? 'Tümü' : perm.resource}
+                        </span>
+                      ))}
+                      {role.permissions.length > 5 && (
+                        <span className="text-xs text-secondary-500">
+                          +{role.permissions.length - 5} daha
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
             );
           })}
         </div>
@@ -272,9 +299,9 @@ export default function RolesPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={selectedRole ? 'Rol Düzenle' : 'Yeni Rol Ekle'}
-        size="lg"
+        size="xl"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <Input
             label="Rol Adı"
             value={formData.name}
@@ -283,25 +310,89 @@ export default function RolesPage() {
             placeholder="örn: Proje Yöneticisi"
           />
 
+          {/* Template Selection */}
+          {!selectedRole && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-secondary-700">
+                Hızlı Şablon Seç (Opsiyonel)
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(ROLE_TEMPLATES).map(([key, template]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => applyTemplate(key)}
+                    className={`rounded-lg border p-3 text-left transition-all hover:border-primary-500 hover:bg-primary-50 ${
+                      selectedTemplate === key ? 'border-primary-500 bg-primary-50' : 'border-secondary-200'
+                    }`}
+                  >
+                    <div className="font-medium text-secondary-900">{template.name}</div>
+                    <div className="text-xs text-secondary-600">{template.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Permission Groups */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-secondary-700">
-              Yetkiler
+            <label className="mb-3 block text-sm font-medium text-secondary-700">
+              Yetkiler ({formData.permissions.length} seçili)
             </label>
-            <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-secondary-200 p-4">
-              {AVAILABLE_PERMISSIONS.map((perm, idx) => (
-                <label
-                  key={idx}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-secondary-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={isPermissionSelected(perm)}
-                    onChange={() => togglePermission(perm)}
-                    className="h-4 w-4 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-secondary-900">{perm.label}</span>
-                </label>
-              ))}
+            <div className="max-h-[500px] space-y-4 overflow-y-auto rounded-lg border border-secondary-200 p-4">
+              {PERMISSION_GROUPS.map((group) => {
+                const isFullySelected = isGroupFullySelected(group.id);
+                const isPartiallySelected = isGroupPartiallySelected(group.id);
+                
+                return (
+                  <div key={group.id} className="space-y-2 rounded-lg border border-secondary-200 p-3">
+                    {/* Group Header */}
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={isFullySelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = isPartiallySelected && !isFullySelected;
+                        }}
+                        onChange={(e) => toggleGroupPermissions(group.id, e.target.checked)}
+                        className="mt-0.5 h-5 w-5 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{group.icon}</span>
+                          <span className="font-medium text-secondary-900">{group.label}</span>
+                        </div>
+                        <p className="text-xs text-secondary-600">{group.description}</p>
+                      </div>
+                    </div>
+
+                    {/* Individual Permissions */}
+                    <div className="ml-8 space-y-1.5 border-l-2 border-secondary-200 pl-3">
+                      {group.permissions.map((perm, idx) => (
+                        <label
+                          key={idx}
+                          className="flex cursor-pointer items-start gap-2 rounded p-1.5 hover:bg-secondary-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isPermissionSelected(perm)}
+                            onChange={() => togglePermission(perm)}
+                            className="mt-0.5 h-4 w-4 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-secondary-900">
+                              {ACTION_LABELS[perm.action] || perm.action}
+                            </div>
+                            <div className="text-xs text-secondary-600">
+                              {ACTION_DESCRIPTIONS[perm.action] || ''}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -309,7 +400,7 @@ export default function RolesPage() {
             <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
               İptal
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={formData.permissions.length === 0}>
               {selectedRole ? 'Güncelle' : 'Oluştur'}
             </Button>
           </ModalFooter>

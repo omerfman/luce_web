@@ -5,8 +5,9 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase/client';
-import { User, Role, Company, PermissionRecord } from '@/types';
+import { User, Role, Company, Permission } from '@/types';
 import { getUserStatus } from '@/lib/hooks/useUserPresence';
+import { PERMISSION_GROUPS, ACTION_LABELS, ACTION_DESCRIPTIONS } from '@/lib/permission-groups';
 
 export default function UsersPage() {
   const { hasPermission, role } = useAuth();
@@ -14,7 +15,6 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [allPermissions, setAllPermissions] = useState<PermissionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -35,7 +35,8 @@ export default function UsersPage() {
     name: '',
     role_id: '',
     company_id: '',
-    custom_permissions: [] as string[],
+    added_permissions: [] as Permission[],
+    removed_permissions: [] as Permission[],
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,29 +78,12 @@ export default function UsersPage() {
 
       if (companiesError) throw companiesError;
 
-      // Fetch all permissions (handle if table doesn't exist)
-      const { data: permissionsData, error: permissionsError } = await supabase
-        .from('permissions')
-        .select('*')
-        .order('resource', { ascending: true });
-
-      // Don't throw error if permissions table doesn't exist
-      if (permissionsError && !permissionsError.message.includes('permissions')) {
-        console.warn('Permissions table not found, skipping permission loading');
-      }
-
-      // Filter out Super Admin users and wildcard permissions
+      // Filter out Super Admin users
       const filteredUsers = (usersData || []).filter(user => user.role?.name !== 'Super Admin');
-      
-      // Filter permissions: remove wildcards and 'all' scope (only Super Admin can use those)
-      const filteredPermissions = (permissionsData || []).filter(perm => 
-        !(perm.resource === '*' && perm.action === '*') && perm.scope !== 'all'
-      );
 
       setUsers(filteredUsers);
       setRoles(rolesData || []);
       setCompanies(companiesData || []);
-      setAllPermissions(filteredPermissions);
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setError(err.message);
@@ -147,28 +131,78 @@ export default function UsersPage() {
 
   async function handleEdit(user: User) {
     setEditingUser(user);
-    const customPermissions = user.meta?.custom_permissions || [];
+    
+    // Parse custom permissions from meta
+    const meta = user.meta || {};
+    const addedPerms = (meta.added_permissions || []) as Permission[];
+    const removedPerms = (meta.removed_permissions || []) as Permission[];
     
     setEditFormData({
       name: user.name,
       role_id: user.role_id,
       company_id: user.company_id,
-      custom_permissions: customPermissions,
+      added_permissions: addedPerms,
+      removed_permissions: removedPerms,
     });
     setShowEditModal(true);
   }
 
-  // Check if a permission is from role (not custom)
-  function isRolePermission(permissionId: string): boolean {
-    if (!editingUser?.role?.permissions) return false;
+  // Get all permissions from role
+  function getRolePermissions(): Permission[] {
+    if (!editingUser?.role?.permissions) return [];
+    return editingUser.role.permissions;
+  }
+
+  // Get final permissions (role + added - removed)
+  function getFinalPermissions(): Permission[] {
+    const rolePerms = getRolePermissions();
+    const addedPerms = editFormData.added_permissions;
+    const removedPerms = editFormData.removed_permissions;
     
-    const permission = allPermissions.find(p => p.id === permissionId);
-    if (!permission) return false;
+    // Start with role permissions
+    let finalPerms = [...rolePerms];
     
-    return editingUser.role.permissions.some(rp =>
-      rp.resource === permission.resource &&
-      rp.action === permission.action &&
-      rp.scope === permission.scope
+    // Remove the removed permissions
+    finalPerms = finalPerms.filter(rp =>
+      !removedPerms.some(removed =>
+        removed.resource === rp.resource &&
+        removed.action === rp.action &&
+        removed.scope === rp.scope
+      )
+    );
+    
+    // Add custom permissions that aren't already there
+    addedPerms.forEach(added => {
+      const exists = finalPerms.some(p =>
+        p.resource === added.resource &&
+        p.action === added.action &&
+        p.scope === added.scope
+      );
+      if (!exists) {
+        finalPerms.push(added);
+      }
+    });
+    
+    return finalPerms;
+  }
+
+  // Check if permission is from role
+  function isRolePermission(permission: Permission): boolean {
+    const rolePerms = getRolePermissions();
+    return rolePerms.some(p =>
+      p.resource === permission.resource &&
+      p.action === permission.action &&
+      p.scope === permission.scope
+    );
+  }
+
+  // Check if permission is currently active
+  function isPermissionActive(permission: Permission): boolean {
+    const finalPerms = getFinalPermissions();
+    return finalPerms.some(p =>
+      p.resource === permission.resource &&
+      p.action === permission.action &&
+      p.scope === permission.scope
     );
   }
 
@@ -189,7 +223,8 @@ export default function UsersPage() {
           company_id: editFormData.company_id,
           meta: {
             ...editingUser.meta,
-            custom_permissions: editFormData.custom_permissions,
+            added_permissions: editFormData.added_permissions,
+            removed_permissions: editFormData.removed_permissions,
           },
         })
         .eq('id', editingUser.id);
@@ -230,60 +265,69 @@ export default function UsersPage() {
     }
   }
 
-  function togglePermission(permissionId: string) {
-    const isFromRole = isRolePermission(permissionId);
-    const isInCustom = editFormData.custom_permissions.includes(permissionId);
+  function togglePermission(permission: Permission) {
+    const isFromRole = isRolePermission(permission);
+    const isActive = isPermissionActive(permission);
     
     setEditFormData(prev => {
-      if (isFromRole && !isInCustom) {
-        // Role permission, not in custom - add to custom as "remove" (negative permission)
-        // We'll use a prefix to mark it as removed
+      if (isFromRole && isActive) {
+        // Role permission, currently active - mark as removed
         return {
           ...prev,
-          custom_permissions: [...prev.custom_permissions, `remove:${permissionId}`],
+          removed_permissions: [...prev.removed_permissions, permission],
         };
-      } else if (isFromRole && isInCustom) {
-        // Role permission, already in custom as "remove" - remove from custom to restore
+      } else if (isFromRole && !isActive) {
+        // Role permission, removed - restore it
         return {
           ...prev,
-          custom_permissions: prev.custom_permissions.filter(id => id !== `remove:${permissionId}`),
+          removed_permissions: prev.removed_permissions.filter(p =>
+            !(p.resource === permission.resource && p.action === permission.action && p.scope === permission.scope)
+          ),
         };
-      } else if (!isFromRole && isInCustom) {
+      } else if (!isFromRole && isActive) {
         // Custom permission - remove it
         return {
           ...prev,
-          custom_permissions: prev.custom_permissions.filter(id => id !== permissionId),
+          added_permissions: prev.added_permissions.filter(p =>
+            !(p.resource === permission.resource && p.action === permission.action && p.scope === permission.scope)
+          ),
         };
       } else {
-        // Not in role, not in custom - add it
+        // Not active, not from role - add as custom
         return {
           ...prev,
-          custom_permissions: [...prev.custom_permissions, permissionId],
+          added_permissions: [...prev.added_permissions, permission],
         };
       }
     });
   }
 
-  // Check if a permission is checked (either from role or custom, and not removed)
-  function isPermissionChecked(permissionId: string): boolean {
-    const isFromRole = isRolePermission(permissionId);
-    const isInCustom = editFormData.custom_permissions.includes(permissionId);
-    const isRemoved = editFormData.custom_permissions.includes(`remove:${permissionId}`);
-    
-    if (isFromRole && !isRemoved) return true;
-    if (!isFromRole && isInCustom) return true;
-    
-    return false;
+  function toggleGroupPermissions(groupId: string, checked: boolean) {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return;
+
+    group.permissions.forEach(perm => {
+      const isActive = isPermissionActive(perm);
+      if (checked && !isActive) {
+        togglePermission(perm);
+      } else if (!checked && isActive) {
+        togglePermission(perm);
+      }
+    });
   }
 
-  // Group permissions by resource
-  const groupedPermissions = allPermissions.reduce((acc, perm) => {
-    if (!acc[perm.resource]) {
-      acc[perm.resource] = [];
-    }
-    acc[perm.resource].push(perm);
-    return acc;
-  }, {} as Record<string, PermissionRecord[]>);
+  function isGroupFullyActive(groupId: string): boolean {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return false;
+    return group.permissions.every(perm => isPermissionActive(perm));
+  }
+
+  function isGroupPartiallyActive(groupId: string): boolean {
+    const group = PERMISSION_GROUPS.find(g => g.id === groupId);
+    if (!group) return false;
+    const activeCount = group.permissions.filter(perm => isPermissionActive(perm)).length;
+    return activeCount > 0 && activeCount < group.permissions.length;
+  }
 
   if (isLoading) {
     return (
@@ -646,23 +690,43 @@ export default function UsersPage() {
         {/* Edit User Modal */}
         {showEditModal && editingUser && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-2xl w-full p-4 lg:p-6 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg max-w-4xl w-full p-4 lg:p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg lg:text-xl font-bold text-secondary-900 mb-4">
                 Kullanıcı Düzenle: {editingUser.name}
               </h2>
 
-              <form onSubmit={handleEditSubmit} className="space-y-3 lg:space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    İsim
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editFormData.name}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    className="input"
-                  />
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      İsim
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      className="input"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Rol
+                    </label>
+                    <select
+                      required
+                      value={editFormData.role_id}
+                      onChange={(e) => setEditFormData({ ...editFormData, role_id: e.target.value })}
+                      className="input"
+                    >
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
@@ -683,71 +747,108 @@ export default function UsersPage() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    Rol
-                  </label>
-                  <select
-                    required
-                    value={editFormData.role_id}
-                    onChange={(e) => setEditFormData({ ...editFormData, role_id: e.target.value })}
-                    className="input"
-                  >
-                    {roles.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="border-t pt-4 mt-4">
-                  <label className="block text-sm font-medium text-secondary-700 mb-3">
-                    Yetkiler (Rol + Özel Yetkiler)
-                  </label>
-                  <div className="space-y-4 max-h-64 overflow-y-auto">
-                    {Object.entries(groupedPermissions).map(([resource, perms]) => (
-                      <div key={resource} className="bg-secondary-50 p-3 rounded">
-                        <h4 className="font-medium text-sm text-secondary-900 mb-2 capitalize">
-                          {resource}
-                        </h4>
-                        <div className="space-y-1">
-                          {perms.map((perm) => {
-                            const isFromRole = isRolePermission(perm.id);
-                            const isChecked = isPermissionChecked(perm.id);
-                            
-                            return (
-                              <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => togglePermission(perm.id)}
-                                  className="rounded border-gray-300"
-                                />
-                                <span className="text-sm text-secondary-700 flex-1">
-                                  {perm.action} - {perm.description}
-                                </span>
-                                {isFromRole && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                                    Rolden
-                                  </span>
-                                )}
-                                {!isFromRole && isChecked && (
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                                    Özel
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                {/* Permission Groups */}
+                <div className="border-t pt-4">
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Yetkiler
+                    </label>
+                    <p className="text-xs text-secondary-600">
+                      Kullanıcının rol yetkilerine ek olarak özel yetkiler verebilir veya rol yetkilerini kaldırabilirsiniz.
+                    </p>
                   </div>
-                  <p className="text-xs text-secondary-500 mt-2">
-                    💡 <strong>Mavi etiketli</strong> yetkiler rolden gelir. Bunları kaldırabilirsiniz.<br />
-                    💡 <strong>Yeşil etiketli</strong> yetkiler özel olarak eklenmiştir.
-                  </p>
+
+                  <div className="max-h-[400px] space-y-3 overflow-y-auto rounded-lg border border-secondary-200 p-4">
+                    {PERMISSION_GROUPS.map((group) => {
+                      const isFullyActive = isGroupFullyActive(group.id);
+                      const isPartiallyActive = isGroupPartiallyActive(group.id);
+                      
+                      return (
+                        <div key={group.id} className="space-y-2 rounded-lg bg-secondary-50 p-3">
+                          {/* Group Header */}
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isFullyActive}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isPartiallyActive && !isFullyActive;
+                              }}
+                              onChange={(e) => toggleGroupPermissions(group.id, e.target.checked)}
+                              className="mt-0.5 h-5 w-5 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">{group.icon}</span>
+                                <span className="font-medium text-sm text-secondary-900">{group.label}</span>
+                                {isPartiallyActive && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
+                                    Kısmi
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-secondary-600 mt-0.5">{group.description}</p>
+                            </div>
+                          </div>
+
+                          {/* Individual Permissions */}
+                          <div className="ml-8 space-y-1 border-l-2 border-secondary-200 pl-3">
+                            {group.permissions.map((perm, idx) => {
+                              const isActive = isPermissionActive(perm);
+                              const isFromRole = isRolePermission(perm);
+                              
+                              return (
+                                <label
+                                  key={idx}
+                                  className="flex cursor-pointer items-start gap-2 rounded p-1.5 hover:bg-white"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isActive}
+                                    onChange={() => togglePermission(perm)}
+                                    className="mt-0.5 h-4 w-4 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium text-secondary-900">
+                                        {ACTION_LABELS[perm.action] || perm.action}
+                                      </span>
+                                      {isFromRole && isActive && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                                          Rol
+                                        </span>
+                                      )}
+                                      {isFromRole && !isActive && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                                          Kaldırıldı
+                                        </span>
+                                      )}
+                                      {!isFromRole && isActive && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+                                          Özel
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-secondary-600">
+                                      {ACTION_DESCRIPTIONS[perm.action] || ''}
+                                    </p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-xs text-blue-900">
+                      <strong>💡 İpucu:</strong><br />
+                      • <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-xs">Rol</span> = Rolden gelen yetki<br />
+                      • <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs">Özel</span> = Özel olarak eklenmiş yetki<br />
+                      • <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-xs">Kaldırıldı</span> = Rol yetkisi kaldırılmış
+                    </p>
+                  </div>
                 </div>
 
                 {error && (
