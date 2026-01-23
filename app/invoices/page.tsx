@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { Pagination } from '@/components/ui/Pagination';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { FileUploader } from '@/components/ui/FileUploader';
 import { supabase } from '@/lib/supabase/client';
@@ -61,6 +62,10 @@ function InvoicesContent() {
     direction: 'desc'
   });
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+
   const [formData, setFormData] = useState({
     amount: '',
     invoice_date: new Date().toISOString().split('T')[0],
@@ -105,6 +110,11 @@ function InvoicesContent() {
       loadProjects();
     }
   }, [company]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, sortConfig.field, sortConfig.direction]);
 
   // Otomatik tutar hesaplama: Toplam = Mal/Hizmet + KDV - Tevkifat
   // SADECE QR okunmadığında çalışır (manuel girişte)
@@ -875,6 +885,22 @@ function InvoicesContent() {
   const pendingCount = invoices.filter(inv => !inv.project_links || inv.project_links.length === 0).length;
   const assignedCount = invoices.filter(inv => inv.project_links && inv.project_links.length > 0).length;
 
+  // Pagination calculations
+  const totalPages = Math.ceil(sortedInvoices.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedInvoices = sortedInvoices.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
+
   // Get selected project name for display
   const selectedProject = projects.find(p => p.id === filters.projectId);
   const pageTitle = selectedProject 
@@ -1165,7 +1191,7 @@ function InvoicesContent() {
                     </td>
                   </tr>
                 ) : (
-                  sortedInvoices.map((invoice) => (
+                  paginatedInvoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-secondary-50">
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-secondary-900">
                         {formatDate(invoice.invoice_date)}
@@ -1278,6 +1304,18 @@ function InvoicesContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {sortedInvoices.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={sortedInvoices.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+            />
+          )}
         </Card>
       </div>
 

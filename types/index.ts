@@ -78,7 +78,7 @@ export interface InvoiceQRData {
   scenario?: string;         // Fatura senaryosu (senaryo)
   type?: string;             // Fatura tipi (tip)
   currency?: string;         // Para birimi (parabirimi)
-  rawData: string;           // Ham QR verisi
+  rawData: string;           // Ham  QR verisi
 }
 
 // Supplier (Tedarikçi) - VKN bazlı firma bilgileri cache
@@ -497,6 +497,87 @@ export interface ProjectSummary {
     total: number;
     invoiceCount: number;
     paymentCount: number;
+  }>;
+}
+
+// ==================== DASHBOARD TYPES ====================
+
+export interface DashboardStats {
+  projects: {
+    total: number;
+    active: number;
+    completed: number;
+    onHold: number;
+    planning: number;
+  };
+  invoices: {
+    count: number;
+    totalAmount: number;
+    totalVAT: number;
+    totalWithholding: number;
+  };
+  payments: {
+    count: number;
+    totalAmount: number;
+  };
+  suppliers: {
+    total: number;
+    subcontractors: number;
+    invoiceCompanies: number;
+    pending: number;
+  };
+  grandTotal: number;
+  thisMonthTotal: number;
+  pendingInvoices: number;
+}
+
+export interface DashboardRecentActivities {
+  invoices: Array<{
+    id: string;
+    invoice_number: string;
+    invoice_date: string;
+    amount: number;
+    supplier_name: string;
+    created_at: string;
+  }>;
+  payments: Array<{
+    id: string;
+    description: string;
+    payment_date: string;
+    amount: number;
+    payment_method: string;
+    created_at: string;
+    supplier?: {
+      id: string;
+      name: string;
+    };
+  }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    status: ProjectStatus;
+    created_at: string;
+  }>;
+}
+
+export interface DashboardChartData {
+  monthlySpending: Array<{
+    month: string; // YYYY-MM format
+    invoices: number;
+    payments: number;
+    total: number;
+  }>;
+  topProjects: Array<{
+    id: string;
+    name: string;
+    total: number;
+  }>;
+  topSuppliers: Array<{
+    id: string;
+    name: string;
+    vkn?: string;
+    total: number;
+    transactionCount: number;
   }>;
 }
 

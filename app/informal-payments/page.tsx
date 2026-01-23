@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { InformalPayment, Project, Supplier } from '@/types';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { Pagination } from '@/components/ui/Pagination';
 import { ContractPaymentModal } from '@/components/informal-payments/ContractPaymentModal';
 import {
   getInformalPayments,
@@ -38,6 +39,10 @@ function InformalPaymentsContent() {
     endDate: '',
     paymentMethod: '',
   });
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   useEffect(() => {
     loadData();
@@ -205,6 +210,27 @@ function InformalPaymentsContent() {
   const pageTitle = selectedProject 
     ? `${selectedProject.name} - Gayri Resmi Ödemeler` 
     : 'Gayri Resmi Ödemeler';
+
+  // Pagination calculations
+  const totalPages = Math.ceil(payments.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedPayments = payments.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
+
+  // Reset to page 1 when payments data changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [payments.length]);
 
   return (
     <Sidebar>
@@ -403,7 +429,7 @@ function InformalPaymentsContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {payments.map((payment) => (
+                  {paginatedPayments.map((payment) => (
                     <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
                         {formatDate(payment.payment_date)}
@@ -475,7 +501,7 @@ function InformalPaymentsContent() {
 
           {/* Mobile Card View */}
           <div className="lg:hidden space-y-4">
-            {payments.map((payment) => (
+            {paginatedPayments.map((payment) => (
               <div key={payment.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 {/* Header: Taşeron ve Tutar */}
                 <div className="flex items-start justify-between mb-3">
@@ -566,6 +592,18 @@ function InformalPaymentsContent() {
               </div>
             ))}
           </div>
+
+          {/* Pagination */}
+          {payments.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={payments.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+            />
+          )}
         </>
       )}
 

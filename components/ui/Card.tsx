@@ -8,9 +8,10 @@ interface CardProps {
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
   hover?: boolean;
+  onClick?: () => void;
 }
 
-export function Card({ children, className, padding = 'md', hover = false }: CardProps) {
+export function Card({ children, className, padding = 'md', hover = false, onClick }: CardProps) {
   const paddingClasses = {
     none: '',
     sm: 'p-4',
@@ -20,10 +21,12 @@ export function Card({ children, className, padding = 'md', hover = false }: Car
 
   return (
     <div
+      onClick={onClick}
       className={cn(
         'rounded-lg border border-secondary-200 bg-white shadow-soft',
         paddingClasses[padding],
         hover && 'transition-shadow hover:shadow-strong',
+        onClick && 'cursor-pointer',
         className
       )}
     >

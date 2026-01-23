@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   getActivityLogs,
   getActivityStats,
@@ -38,8 +39,8 @@ export default function ActivityLogsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | 'all'>('all');
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
-  const itemsPerPage = 50;
   const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
   const isCompanyAdmin = hasPermission('activity_logs', 'read') || hasPermission('activity_logs', 'manage');
   const canViewLogs = isSuperAdmin || isCompanyAdmin || !!user; // Herkes kendi loglarını görebilir
@@ -49,7 +50,7 @@ export default function ActivityLogsPage() {
       fetchActivityLogs();
       fetchStats();
     }
-  }, [authLoading, canViewLogs, page, searchTerm, actionFilter, resourceFilter, startDate, endDate, selectedUserId]);
+  }, [authLoading, canViewLogs, page, searchTerm, actionFilter, resourceFilter, startDate, endDate, selectedUserId, itemsPerPage]);
 
   async function fetchActivityLogs() {
     try {
@@ -172,6 +173,16 @@ export default function ActivityLogsPage() {
       </Sidebar>
     );
   }
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setPage(1);
+  };
 
   const totalPages = Math.ceil(total / itemsPerPage);
   const hasActiveFilters = searchTerm || actionFilter !== 'all' || resourceFilter !== 'all' || startDate || endDate || selectedUserId !== 'all';
@@ -461,29 +472,16 @@ export default function ActivityLogsPage() {
             )}
 
             {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-6 border-t border-secondary-200">
-                <div className="text-sm text-secondary-600">
-                  Sayfa {page} / {totalPages}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                  >
-                    Önceki
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                  >
-                    Sonraki
-                  </Button>
-                </div>
+            {total > 0 && (
+              <div className="mt-6">
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={total}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={handlePageChange}
+                  onItemsPerPageChange={handleItemsPerPageChange}
+                />
               </div>
             )}
           </CardContent>
