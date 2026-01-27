@@ -161,6 +161,7 @@ export interface Payment {
   payment_type: string;
   amount: number;
   payment_date: string;
+  project_id?: string | null;
   description?: string | null;
   created_by: string;
   created_at: string;

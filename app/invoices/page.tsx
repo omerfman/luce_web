@@ -41,7 +41,8 @@ function InvoicesContent() {
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [showFilters, setShowFilters] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
-  const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string, payment_date: string}>>([{type: '', amount: '', payment_date: ''}]);
+  const [selectedPaymentTypes, setSelectedPaymentTypes] = useState<Array<{type: string, amount: string, payment_date: string, project_id: string}>>([{type: '', amount: '', payment_date: '', project_id: ''}]);
+  const [splitEqually, setSplitEqually] = useState(false);
   
   // Get project filter from URL
   const projectFilter = searchParams.get('project');
@@ -240,20 +241,23 @@ function InvoicesContent() {
 
   function openPaymentModal(invoice: Invoice) {
     setSelectedInvoice(invoice);
-    setSelectedPaymentTypes([{type: '', amount: '', payment_date: ''}]);
+    const defaultProjectId = invoice.project_links?.length === 1 ? invoice.project_links[0]?.project?.id || '' : '';
+    setSelectedPaymentTypes([{type: '', amount: '', payment_date: '', project_id: defaultProjectId}]);
+    setSplitEqually(false);
     loadPayments(invoice.id);
     setIsPaymentModalOpen(true);
   }
 
   function addPaymentType() {
-    setSelectedPaymentTypes([...selectedPaymentTypes, {type: '', amount: '', payment_date: ''}]);
+    const defaultProjectId = selectedInvoice?.project_links?.length === 1 ? selectedInvoice.project_links[0]?.project?.id || '' : '';
+    setSelectedPaymentTypes([...selectedPaymentTypes, {type: '', amount: '', payment_date: '', project_id: defaultProjectId}]);
   }
 
   function removePaymentType(index: number) {
     setSelectedPaymentTypes(selectedPaymentTypes.filter((_, i) => i !== index));
   }
 
-  function updatePaymentType(index: number, field: 'type' | 'amount' | 'payment_date', value: string) {
+  function updatePaymentType(index: number, field: 'type' | 'amount' | 'payment_date' | 'project_id', value: string) {
     const updated = [...selectedPaymentTypes];
     updated[index][field] = value;
     setSelectedPaymentTypes(updated);
@@ -267,6 +271,25 @@ function InvoicesContent() {
     if (validPayments.length === 0) {
       alert('Lütfen en az bir ödeme tipi seçin');
       return;
+    }
+
+    // Eğer fatura birden fazla projeye atanmışsa, her ödeme için proje seçimi zorunludur (eşit paylaştır seçili değilse)
+    const hasMultipleProjects = (selectedInvoice.project_links?.length || 0) > 1;
+    if (hasMultipleProjects && !splitEqually) {
+      const missingProject = validPayments.some(p => !p.project_id);
+      if (missingProject) {
+        alert('Fatura birden fazla projeye atanmış. Lütfen her ödeme için proje seçin veya "Eşit Paylaştır" seçeneğini kullanın.');
+        return;
+      }
+    }
+
+    // Eşit paylaştır seçiliyse, tutar zorunludur
+    if (splitEqually) {
+      const missingAmount = validPayments.some(p => !p.amount);
+      if (missingAmount) {
+        alert('Eşit paylaştır seçeneği için tutar girmelisiniz.');
+        return;
+      }
     }
 
     setIsUploading(true);
@@ -298,22 +321,55 @@ function InvoicesContent() {
         return;
       }
 
-      const paymentsToInsert = validPayments.map(p => ({
-        invoice_id: selectedInvoice.id,
-        company_id: company.id,
-        payment_type: p.type,
-        // Tutar boşsa gerçek kalan tutarı kullan
-        amount: p.amount ? parseCurrencyInput(p.amount) : remainingAmount,
-        // Tarih boşsa bugünün tarihini kullan
-        payment_date: p.payment_date || new Date().toISOString().split('T')[0],
-        created_by: user!.id,
-      }));
+      // Eşit paylaştır seçiliyse, her proje için ayrı ödeme kaydı oluştur
+      let paymentsToInsert: any[] = [];
+      
+      if (splitEqually && hasMultipleProjects) {
+        // Her ödeme tipini her projeye böl
+        validPayments.forEach(p => {
+          const totalAmount = p.amount ? parseCurrencyInput(p.amount) : remainingAmount;
+          const projectCount = selectedInvoice.project_links?.length || 1;
+          const amountPerProject = totalAmount / projectCount;
+          
+          selectedInvoice.project_links?.forEach((link: any) => {
+            paymentsToInsert.push({
+              invoice_id: selectedInvoice.id,
+              company_id: company.id,
+              payment_type: p.type,
+              amount: amountPerProject,
+              payment_date: p.payment_date || new Date().toISOString().split('T')[0],
+              project_id: link.project.id,
+              created_by: user!.id,
+            });
+          });
+        });
+      } else {
+        // Normal ödeme kayıtları
+        paymentsToInsert = validPayments.map(p => ({
+          invoice_id: selectedInvoice.id,
+          company_id: company.id,
+          payment_type: p.type,
+          // Tutar boşsa gerçek kalan tutarı kullan
+          amount: p.amount ? parseCurrencyInput(p.amount) : remainingAmount,
+          // Tarih boşsa bugünün tarihini kullan
+          payment_date: p.payment_date || new Date().toISOString().split('T')[0],
+          // Proje ID'sini ekle (tek proje veya çoklu proje durumunda)
+          project_id: p.project_id || (selectedInvoice.project_links?.length === 1 ? selectedInvoice.project_links[0]?.project?.id || null : null),
+          created_by: user!.id,
+        }));
+      }
 
       const { error } = await supabase
         .from('payments')
         .insert(paymentsToInsert);
 
       if (error) throw error;
+
+      // Başarı mesajı
+      if (splitEqually && hasMultipleProjects) {
+        const projectCount = selectedInvoice.project_links?.length || 0;
+        alert(`${paymentsToInsert.length} ödeme kaydı başarıyla oluşturuldu (${validPayments.length} ödeme tipi × ${projectCount} proje)`);
+      }
 
       setIsPaymentModalOpen(false);
       loadPayments(selectedInvoice.id);
@@ -1612,6 +1668,14 @@ function InvoicesContent() {
             <p className="text-sm text-secondary-700">
               <span className="font-medium">Toplam Tutar:</span> {selectedInvoice && formatCurrency(selectedInvoice.amount)}
             </p>
+            {selectedInvoice && (selectedInvoice.project_links?.length || 0) > 1 && (
+              <p className="text-xs text-amber-700 mt-2 flex items-start gap-1">
+                <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <span>Bu fatura birden fazla projeye atanmış. Her ödeme için proje seçimi yapmanız gerekmektedir.</span>
+              </p>
+            )}
           </div>
 
           {/* Existing Payments */}
@@ -1619,21 +1683,34 @@ function InvoicesContent() {
             <div className="rounded-lg border border-secondary-200 p-4">
               <h3 className="text-sm font-semibold text-secondary-900 mb-3">Mevcut Ödemeler</h3>
               <div className="space-y-2">
-                {payments.map((payment) => (
-                  <div key={payment.id} className="flex items-center justify-between rounded-lg bg-secondary-50 px-3 py-2">
-                    <div>
-                      <span className="text-sm font-medium text-secondary-900">{payment.payment_type}</span>
-                      <span className="ml-2 text-xs text-secondary-500">
-                        {formatDate(payment.payment_date)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold text-secondary-900">
-                        {formatCurrency(payment.amount)}
-                      </span>
-                      {canDelete && (
-                        <button
-                          type="button"
+                {payments.map((payment) => {
+                  // Ödemenin bağlı olduğu projeyi bul
+                  const paymentProject = payment.project_id 
+                    ? selectedInvoice?.project_links?.find((link: any) => link.project.id === payment.project_id)?.project
+                    : null;
+                  
+                  return (
+                    <div key={payment.id} className="flex items-center justify-between rounded-lg bg-secondary-50 px-3 py-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-secondary-900">{payment.payment_type}</span>
+                          {paymentProject && (
+                            <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                              {paymentProject.name}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-secondary-500">
+                          {formatDate(payment.payment_date)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-secondary-900">
+                          {formatCurrency(payment.amount)}
+                        </span>
+                        {canDelete && (
+                          <button
+                            type="button"
                           onClick={() => handleDeletePayment(payment.id)}
                           className="text-red-600 hover:text-red-700"
                           title="Ödemeyi Sil"
@@ -1645,7 +1722,8 @@ function InvoicesContent() {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 <div className="border-t border-secondary-300 pt-2 mt-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-secondary-700">Toplam Ödenen:</span>
@@ -1695,6 +1773,28 @@ function InvoicesContent() {
               </Button>
             </div>
 
+            {/* Eşit Paylaştır Seçeneği - sadece birden fazla proje varsa göster */}
+            {selectedInvoice && (selectedInvoice.project_links?.length || 0) > 1 && (
+              <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={splitEqually}
+                    onChange={(e) => setSplitEqually(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-blue-300 text-primary-600 focus:ring-2 focus:ring-primary-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold text-blue-900">
+                      Tutarı Projelere Eşit Paylaştır
+                    </span>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Bu seçenek aktifken, girdiğiniz tutar {selectedInvoice.project_links?.length || 0} projeye eşit olarak bölünecek ve her proje için ayrı ödeme kaydı oluşturulacak. Proje seçmenize gerek kalmayacak.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
+
             {selectedPaymentTypes.map((payment, index) => (
               <div key={index} className="flex gap-3 items-start">
                 <div className="flex-1">
@@ -1717,6 +1817,27 @@ function InvoicesContent() {
                     <option value="Cari">Cari</option>
                   </select>
                 </div>
+                {/* Proje seçimi - sadece birden fazla proje varsa ve eşit paylaştır kapalıysa göster */}
+                {selectedInvoice && (selectedInvoice.project_links?.length || 0) > 1 && !splitEqually && (
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Proje <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={payment.project_id}
+                      onChange={(e) => updatePaymentType(index, 'project_id', e.target.value)}
+                      className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      required
+                    >
+                      <option value="">Proje seçiniz</option>
+                      {selectedInvoice.project_links?.map((link: any) => (
+                        <option key={link.project.id} value={link.project.id}>
+                          {link.project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-secondary-700 mb-1">
                     Tutar (₺)

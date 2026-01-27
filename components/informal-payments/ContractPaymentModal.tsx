@@ -34,6 +34,7 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
   // Çoklu proje ödemeleri için array
   const [projectPayments, setProjectPayments] = useState<Array<{projectId: string, amount: string}>>([{projectId: '', amount: ''}]);
   const [paymentMethod, setPaymentMethod] = useState<'Kasadan Nakit' | 'Kredi Kartı' | 'Banka Transferi' | 'Çek' | 'Senet' | 'Havale/EFT' | 'Cari'>('Kasadan Nakit');
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   // Data states
   const [subcontractors, setSubcontractors] = useState<Supplier[]>([]);
@@ -167,7 +168,7 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
             description: jobDescription.trim(),
             amount: parseFloat(payment.amount),
             payment_method: paymentMethod,
-            payment_date: new Date().toISOString().split('T')[0],
+            payment_date: paymentDate,
             has_contract: true,
             created_by: userId
           })
@@ -198,9 +199,10 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
       });
 
       // PDF oluştur (çoklu proje için)
+      const selectedDate = new Date(paymentDate + 'T00:00:00');
       const pdfData: ContractPaymentData = {
         receiptNumber,
-        date: new Date().toLocaleDateString('tr-TR', { 
+        date: selectedDate.toLocaleDateString('tr-TR', { 
           year: 'numeric', 
           month: 'long', 
           day: 'numeric' 
@@ -322,6 +324,7 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
     setJobDescription('');
     setProjectPayments([{projectId: '', amount: ''}]);
     setPaymentMethod('Kasadan Nakit');
+    setPaymentDate(new Date().toISOString().split('T')[0]);
     setSearchQuery('');
     setErrors({});
     onClose();
@@ -584,6 +587,22 @@ export function ContractPaymentModal({ isOpen, onClose, companyId, userId, onSuc
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Ödeme Tarihi */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-gray-900 sm:text-base">
+              Ödeme Tarihi <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm transition-all focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            />
+            <p className="text-xs text-gray-500">
+              PDF sözleşmede bu tarih görünecektir
+            </p>
           </div>
 
           {/* Ödeme Yöntemi */}
