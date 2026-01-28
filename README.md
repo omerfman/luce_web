@@ -1,7 +1,8 @@
 # Luce Mimarlık - İç İş Akışı ve Proje Yönetim Sistemi
 
 > **Production-Ready Internal Workflow System** 🚀  
-> Güvenli, ölçeklenebilir, multi-tenant mimari ile geliştirilmiş iş akışı sistemi
+> Güvenli, ölçeklenebilir, multi-tenant mimari ile geliştirilmiş iş akışı sistemi  
+> **📱 Progressive Web App (PWA)** - Mobil cihazlara yüklenebilir!
 
 ---
 
@@ -15,7 +16,8 @@ npm run dev
 ```
 
 📖 **Detaylı kurulum:** [`QUICKSTART.md`](./QUICKSTART.md)  
-🚀 **Production deployment:** [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md)
+🚀 **Production deployment:** [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md)  
+📱 **PWA Test Rehberi:** [`PWA_TEST_REHBERI.md`](./PWA_TEST_REHBERI.md)
 
 ---
 
@@ -25,12 +27,22 @@ npm run dev
 - **Backend:** Supabase (PostgreSQL), Next.js API Routes
 - **Auth:** Supabase Auth (Magic Link + JWT)
 - **Storage:** Supabase Storage (fotoğraf, PDF)
+- **PWA:** next-pwa, Service Worker, Web App Manifest
 - **Deployment:** Vercel
 - **Monitoring:** Sentry (planlı)
 
 ## 🎯 Özellikler
 
 ### ✅ MVP Tamamlandı (Production Ready)
+
+**📱 Progressive Web App (PWA):**
+- Mobil cihazlara yüklenebilir (iOS & Android)
+- Offline çalışma desteği
+- Ana ekrana eklenebilir
+- Standalone mode (native app deneyimi)
+- Cache stratejileri (hızlı yükleme)
+- Service Worker (arka plan senkronizasyon)
+- App shortcuts (hızlı erişim)
 
 **Kimlik Doğrulama:**
 - Magic Link (şifresiz) giriş

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth/AuthContext';
@@ -9,6 +9,31 @@ export const metadata: Metadata = {
   title: 'Luce Mimarlık - İç İş Akışı Sistemi',
   description: 'Proje ve fatura yönetimi için güvenli iç iş akışı platformu',
   robots: 'noindex, nofollow', // Üretimde kaldırılacak
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Luce İş Akışı',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#1e40af' },
+    { media: '(prefers-color-scheme: dark)', color: '#1e3a8a' },
+  ],
 };
 
 export default function RootLayout({
@@ -18,6 +43,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="tr" className={inter.variable}>
+      <head>
+        <meta name="application-name" content="Luce İş Akışı" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Luce İş Akışı" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
+      </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>
