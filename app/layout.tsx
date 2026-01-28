@@ -12,8 +12,9 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'Luce İş Akışı',
+    startupImage: '/apple-touch-icon.png',
   },
   formatDetection: {
     telephone: false,
@@ -46,11 +47,14 @@ export default function RootLayout({
       <head>
         <meta name="application-name" content="Luce İş Akışı" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Luce İş Akışı" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="msapplication-TileColor" content="#1e40af" />
+        <meta name="msapplication-tap-highlight" content="no" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-startup-image" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
       </head>
       <body>

@@ -2,16 +2,18 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const manifest = {
-    id: '/',
+    id: '/?source=pwa',
     name: 'Luce Mimarlık İş Akışı',
     short_name: 'Luce',
     description: 'Proje ve fatura yönetimi için iş akışı platformu',
-    start_url: '/',
+    start_url: '/?source=pwa',
     display: 'standalone',
+    display_override: ['standalone', 'fullscreen'],
     background_color: '#ffffff',
     theme_color: '#1e40af',
-    orientation: 'any',
+    orientation: 'portrait-primary',
     scope: '/',
+    prefer_related_applications: false,
     icons: [
       {
         src: '/icons/icon-72x72.png',
