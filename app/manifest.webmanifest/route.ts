@@ -7,9 +7,11 @@ export async function GET() {
     description: 'Proje ve fatura yönetimi için iş akışı platformu',
     start_url: '/',
     display: 'standalone',
+    display_override: ['standalone', 'fullscreen', 'minimal-ui'],
     background_color: '#ffffff',
     theme_color: '#1e40af',
     scope: '/',
+    orientation: 'any',
     categories: ['business', 'productivity'],
     icons: [
       {
