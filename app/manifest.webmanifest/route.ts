@@ -46,7 +46,7 @@ export async function GET() {
         src: '/icons/icon-192x192.png',
         sizes: '192x192',
         type: 'image/png',
-        purpose: 'any',
+        purpose: 'any maskable',
       },
       {
         src: '/icons/icon-384x384.png',
@@ -58,19 +58,7 @@ export async function GET() {
         src: '/icons/icon-512x512.png',
         sizes: '512x512',
         type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/icons/icon-maskable-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'maskable',
-      },
-      {
-        src: '/icons/icon-maskable-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'maskable',
+        purpose: 'any maskable',
       },
     ],
     screenshots: [
@@ -94,7 +82,7 @@ export async function GET() {
   return NextResponse.json(manifest, {
     headers: {
       'Content-Type': 'application/manifest+json',
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     },
   });
 }
