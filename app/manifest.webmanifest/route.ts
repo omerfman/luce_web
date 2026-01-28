@@ -13,6 +13,12 @@ export async function GET() {
     categories: ['business', 'productivity'],
     icons: [
       {
+        src: '/logo.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any maskable',
+      },
+      {
         src: '/icons/icon-72x72.png',
         sizes: '72x72',
         type: 'image/png',

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 import { emailSchema } from '@/lib/validation';
 // import { useRouter } from 'next/navigation'; // Reserved for future use
 import Link from 'next/link';
+import InstallPWAButton from '@/components/ui/InstallPWAButton';
 
 export default function LoginPage() {
   // const router = useRouter(); // Reserved for future use
@@ -88,6 +89,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-secondary-50">
+      <InstallPWAButton />
       <div className="card w-full max-w-md">
         <div className="mb-6 text-center">
           <h1 className="text-3xl font-bold text-secondary-900">Luce Mimarlık</h1>
