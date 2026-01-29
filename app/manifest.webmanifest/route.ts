@@ -2,16 +2,18 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const manifest = {
+    id: '/',
     name: 'Luce Mimarlık İş Akışı',
     short_name: 'Luce',
     description: 'Proje ve fatura yönetimi için iş akışı platformu',
-    start_url: '/',
+    start_url: '/login?source=pwa',
     display: 'standalone',
-    display_override: ['standalone', 'fullscreen', 'minimal-ui'],
+    display_override: ['standalone', 'minimal-ui'],
     background_color: '#ffffff',
     theme_color: '#1e40af',
     scope: '/',
-    orientation: 'any',
+    orientation: 'portrait-primary',
+    prefer_related_applications: false,
     categories: ['business', 'productivity'],
     icons: [
       {
@@ -90,7 +92,7 @@ export async function GET() {
   return NextResponse.json(manifest, {
     headers: {
       'Content-Type': 'application/manifest+json',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control': 'public, max-age=0, must-revalidate',
     },
   });
 }

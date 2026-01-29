@@ -22,7 +22,9 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
 };
 
@@ -53,9 +55,10 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileColor" content="#1e40af" />
         <meta name="msapplication-tap-highlight" content="no" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
         <link rel="apple-touch-startup-image" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
+        <link rel="manifest" href="/manifest.webmanifest" />
       </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
