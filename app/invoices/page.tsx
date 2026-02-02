@@ -18,6 +18,7 @@ import { formatCurrency, formatDate, parseCurrencyInput, numberToTurkishCurrency
 import { Invoice, Project, InvoiceQRData } from '@/types';
 import { getOrCreateSupplier } from '@/lib/supabase/suppliers';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 type TabType = 'pending' | 'assigned' | 'all';
 
@@ -787,7 +788,7 @@ function InvoicesContent() {
     }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
     try {
       // Ekranda görünen sıralanmış faturaları al
       const dataToExport = sortedInvoices.map((invoice, index) => {
@@ -795,22 +796,24 @@ function InvoicesContent() {
         const totalPaid = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
         const remaining = Number(invoice.amount) - totalPaid;
         const paymentStatus = remaining === 0 ? 'Ödendi' : totalPaid > 0 ? 'Kısmi Ödeme' : 'Ödenmedi';
+        const withholdingAmount = Number(invoice.withholding_amount) || 0;
         
         // Proje isimlerini birleştir
         const projectNames = invoice.project_links?.map((link: any) => link.project?.name).filter(Boolean).join(', ') || 'Atanmadı';
         
-        return {
-          'Sıra': index + 1,
-          'Fatura No': invoice.invoice_number,
-          'Tarih': formatDate(invoice.invoice_date),
-          'Tedarikçi': invoice.supplier_name || '-',
-          'Tutar (₺)': Number(invoice.amount).toFixed(2),
-          'Ödenen (₺)': totalPaid.toFixed(2),
-          'Kalan (₺)': remaining.toFixed(2),
-          'Ödeme Durumu': paymentStatus,
-          'Projeler': projectNames,
-          'Açıklama': invoice.description || '-',
-        };
+        return [
+          index + 1,
+          invoice.invoice_number,
+          formatDate(invoice.invoice_date),
+          invoice.supplier_name || '-',
+          Number(invoice.amount),
+          totalPaid,
+          remaining,
+          withholdingAmount,
+          paymentStatus,
+          projectNames,
+          invoice.description || '-',
+        ];
       });
 
       if (dataToExport.length === 0) {
@@ -818,24 +821,170 @@ function InvoicesContent() {
         return;
       }
 
-      // Excel çalışma kitabı oluştur
-      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Faturalar');
+      // ExcelJS ile çalışma kitabı oluştur
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Faturalar');
 
-      // Kolon genişliklerini ayarla
-      worksheet['!cols'] = [
-        { wch: 6 },  // Sıra
-        { wch: 15 }, // Fatura No
-        { wch: 12 }, // Tarih
-        { wch: 25 }, // Tedarikçi
-        { wch: 12 }, // Tutar
-        { wch: 12 }, // Ödenen
-        { wch: 12 }, // Kalan
-        { wch: 15 }, // Ödeme Durumu
-        { wch: 30 }, // Projeler
-        { wch: 40 }, // Açıklama
+      // Sütun başlıkları
+      const headers = ['Sıra', 'Fatura No', 'Tarih', 'Tedarikçi', 'Tutar', 'Ödenen', 'Kalan', 'Tevkifat', 'Ödeme Durumu', 'Projeler', 'Açıklama'];
+      
+      // Sütun genişlikleri
+      worksheet.columns = [
+        { key: 'sira', width: 8 },
+        { key: 'faturaNo', width: 17 },
+        { key: 'tarih', width: 13 },
+        { key: 'tedarikci', width: 27 },
+        { key: 'tutar', width: 16 },
+        { key: 'odenen', width: 16 },
+        { key: 'kalan', width: 16 },
+        { key: 'tevkifat', width: 16 },
+        { key: 'odemeDurumu', width: 17 },
+        { key: 'projeler', width: 32 },
+        { key: 'aciklama', width: 42 },
       ];
+
+      // Başlık satırını ekle
+      const headerRow = worksheet.addRow(headers);
+      
+      // Başlık satırı stili (koyu mavi arka plan, beyaz yazı, kalın, ortalanmış)
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4472C4' }
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center'
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // Veri satırlarını ekle ve toplamları hesapla
+      let totalAmount = 0;
+      let totalPaid = 0;
+      let totalRemaining = 0;
+      let totalWithholding = 0;
+
+      dataToExport.forEach((rowData, index) => {
+        const row = worksheet.addRow(rowData);
+        
+        // Toplamları hesapla
+        totalAmount += rowData[4] || 0;
+        totalPaid += rowData[5] || 0;
+        totalRemaining += rowData[6] || 0;
+        totalWithholding += rowData[7] || 0;
+        
+        // Zebra striping: Çift satırlar açık gri, tek satırlar beyaz
+        const isEvenRow = (index + 1) % 2 === 0;
+        const bgColor = isEvenRow ? 'FFF2F2F2' : 'FFFFFFFF';
+        
+        row.eachCell((cell, colNumber) => {
+          // Arka plan rengi
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: bgColor }
+          };
+          
+          // Para birimi formatı (Tutar, Ödenen, Kalan, Tevkifat: sütun 5, 6, 7, 8)
+          if (colNumber >= 5 && colNumber <= 8) {
+            cell.numFmt = '#,##0.00 "₺"';
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'right'
+            };
+          } else {
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'left'
+            };
+          }
+          
+          // İnce gri çerçeveler
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
+          };
+          
+          cell.font = {
+            size: 10
+          };
+        });
+      });
+
+      // Toplam satırını ekle (yeşil arka plan, kalın, beyaz yazı)
+      const totalRow = worksheet.addRow([
+        '',
+        '',
+        '',
+        'TOPLAM',
+        totalAmount,
+        totalPaid,
+        totalRemaining,
+        totalWithholding,
+        '',
+        '',
+        ''
+      ]);
+
+      totalRow.eachCell((cell, colNumber) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF2E7D32' } // Koyu yeşil
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11
+        };
+        
+        // Para birimi formatı
+        if (colNumber >= 5 && colNumber <= 8) {
+          cell.numFmt = '#,##0.00 "₺"';
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right'
+          };
+        } else if (colNumber === 4) {
+          // "TOPLAM" yazısı
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right'
+          };
+        } else {
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'center'
+          };
+        }
+        
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'medium', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // AutoFilter ekle (tüm sütunlara dropdown filtre - toplam satırı hariç)
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: dataToExport.length + 1, column: headers.length }
+      };
 
       // Dosya adını oluştur (tarih + filtre bilgisi)
       const date = new Date().toISOString().split('T')[0];
@@ -852,7 +1001,14 @@ function InvoicesContent() {
       fileName += '.xlsx';
 
       // Excel dosyasını indir
-      XLSX.writeFile(workbook, fileName);
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.URL.revokeObjectURL(url);
       
       console.log(`Excel export: ${dataToExport.length} fatura dışa aktarıldı`);
     } catch (error) {
