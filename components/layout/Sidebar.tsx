@@ -15,6 +15,7 @@ export function Sidebar({ children }: SidebarProps) {
   const { user, company, role, signOut, hasPermission } = useAuth();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isInvoicesOpen, setIsInvoicesOpen] = useState(true); // Faturalar accordion açık/kapalı
 
   const isSuperAdmin = role?.name === 'Super Admin' && role?.company_id === null;
   
@@ -26,7 +27,19 @@ export function Sidebar({ children }: SidebarProps) {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon, resource: null, action: null },
     { name: 'Projeler', href: '/projects', icon: FolderIcon, resource: 'projects', action: 'read' },
-    { name: 'Faturalar', href: '/invoices', icon: DocumentIcon, resource: 'invoices', action: 'read' },
+    // Faturalar artık accordion
+    { 
+      name: 'Faturalar', 
+      icon: DocumentIcon, 
+      resource: 'invoices', 
+      action: 'read',
+      isAccordion: true,
+      subItems: [
+        { name: 'Gelen Faturalar', href: '/invoices', icon: DocumentIcon, resource: 'invoices', action: 'read' },
+        { name: 'Giden Faturalar', href: '/invoices/outgoing', icon: DocumentIcon, resource: 'invoices', action: 'read' },
+      ]
+    },
+    { name: 'Müşteriler', href: '/customers', icon: UsersIcon, resource: 'invoices', action: 'read' },
     { name: 'Gayri Resmi Ödemeler', href: '/informal-payments', icon: WalletIcon, resource: 'invoices', action: 'read' },
     { name: 'Taşeron Listesi', href: '/subcontractors', icon: BuildingIcon, resource: 'invoices', action: 'read' },
     { name: 'Kullanıcılar', href: '/users', icon: UsersIcon, resource: 'users', action: 'read' },
@@ -88,11 +101,63 @@ export function Sidebar({ children }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
           {visibleNavigation.map((item) => {
+            // Accordion item (Faturalar)
+            if (item.isAccordion && item.subItems) {
+              const hasActiveSubItem = item.subItems.some(sub => pathname === sub.href);
+              
+              return (
+                <div key={item.name}>
+                  {/* Accordion header */}
+                  <button
+                    onClick={() => setIsInvoicesOpen(!isInvoicesOpen)}
+                    className={cn(
+                      'sidebar-link w-full justify-between',
+                      hasActiveSubItem && 'sidebar-link-active'
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <item.icon className="h-5 w-5" />
+                      <span>{item.name}</span>
+                    </div>
+                    <ChevronIcon className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      isInvoicesOpen && "rotate-180"
+                    )} />
+                  </button>
+                  
+                  {/* Accordion content */}
+                  {isInvoicesOpen && (
+                    <div className="ml-4 mt-1 space-y-1 border-l-2 border-secondary-200 pl-3">
+                      {item.subItems.map((subItem) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={subItem.name}
+                            href={subItem.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                              'sidebar-link text-sm',
+                              isSubActive && 'sidebar-link-active'
+                            )}
+                          >
+                            <subItem.icon className="h-4 w-4" />
+                            <span>{subItem.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            
+            // Regular nav item
             const isActive = pathname === item.href;
+            const hrefValue = item.href ?? '#';
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={hrefValue}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={cn(
                   'sidebar-link',
@@ -226,6 +291,14 @@ function BuildingIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
     </svg>
   );
 }

@@ -53,9 +53,24 @@ export async function GET(
 
     console.log('Supplier found:', supplier.name, 'VKN:', supplier.vkn);
 
-    // Get invoices related to this supplier
+    // Check if this VKN also exists as a customer
+    let customer: any = null;
+    if (supplier.vkn) {
+      const { data: customerData } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('vkn', supplier.vkn)
+        .eq('company_id', companyId)
+        .maybeSingle();
+      
+      customer = customerData;
+      if (customer) {
+        console.log('This supplier is also a customer:', customer.name);
+      }
+    }
+
+    // Get incoming invoices (where this company is the supplier - we are buying from them)
     // Search by supplier_vkn (primary) or supplier_name (fallback)
-    // Note: Most invoices use VKN, not supplier_id
     let invoices: any[] = [];
     let invoicesError: any = null;
     
@@ -124,6 +139,45 @@ export async function GET(
     
     console.log('Invoice stats:', invoiceStats);
 
+    // Get outgoing invoices (where this company is the customer - we are selling to them)
+    let outgoingInvoices: any[] = [];
+    let outgoingInvoiceStats = {
+      count: 0,
+      totalAmount: 0,
+      totalWithholding: 0,
+    };
+
+    if (supplier.vkn) {
+      const { data: outgoingData, error: outgoingError } = await supabase
+        .from('outgoing_invoices')
+        .select(`
+          *,
+          project_links:outgoing_invoice_project_links(
+            id,
+            project_id,
+            project:projects(id, name)
+          )
+        `)
+        .eq('company_id', companyId)
+        .eq('customer_vkn', supplier.vkn)
+        .order('invoice_date', { ascending: false });
+      
+      if (outgoingError) {
+        console.error('Error fetching outgoing invoices:', outgoingError);
+      } else {
+        outgoingInvoices = outgoingData || [];
+        console.log('Outgoing invoices found:', outgoingInvoices.length);
+        
+        outgoingInvoiceStats = {
+          count: outgoingInvoices.length,
+          totalAmount: outgoingInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0),
+          totalWithholding: outgoingInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.withholding_amount) || 0), 0),
+        };
+      }
+    }
+
+    console.log('Outgoing invoice stats:', outgoingInvoiceStats);
+
     // Get informal payments related to this supplier
     // Informal payments use supplier_id (not subcontractor_id)
     let informalPayments: any[] = [];
@@ -152,8 +206,12 @@ export async function GET(
       };
     }
 
-    // Calculate grand total
-    const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount;
+    // Calculate net balance: outgoing (income) - incoming (expense) - informal (expense)
+    const netBalance = outgoingInvoiceStats.totalAmount - invoiceStats.totalAmount - informalPaymentStats.totalAmount;
+    console.log('Net balance:', netBalance, '(outgoing:', outgoingInvoiceStats.totalAmount, '- incoming:', invoiceStats.totalAmount, '- informal:', informalPaymentStats.totalAmount, ')');
+
+    // Calculate grand total (all transactions)
+    const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount + outgoingInvoiceStats.totalAmount;
     
     console.log('Grand total:', grandTotal);
     console.log('Returning response with', invoices?.length || 0, 'invoices and', informalPayments?.length || 0, 'payments');
@@ -161,8 +219,15 @@ export async function GET(
     // Get unique project IDs from invoice_project_links and informal_payments
     const projectIds = new Set<string>();
     
-    // Collect projects from invoice links (many-to-many)
+    // Collect projects from incoming invoice links (many-to-many)
     invoices?.forEach((inv: any) => {
+      inv.project_links?.forEach((link: any) => {
+        if (link.project_id) projectIds.add(link.project_id);
+      });
+    });
+    
+    // Collect projects from outgoing invoice links (many-to-many)
+    outgoingInvoices?.forEach((inv: any) => {
       inv.project_links?.forEach((link: any) => {
         if (link.project_id) projectIds.add(link.project_id);
       });
@@ -185,19 +250,29 @@ export async function GET(
       console.log('Projects found:', projects.length);
     }
 
-    // Monthly spending data
-    const monthlyData = new Map<string, { invoices: number; informalPayments: number }>();
+    // Monthly transaction data (incoming = expense, outgoing = income)
+    const monthlyData = new Map<string, { incomingInvoices: number; outgoingInvoices: number; informalPayments: number }>();
 
+    // Incoming invoices (expenses - we pay them)
     invoices?.forEach((inv: any) => {
       const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
-      const current = monthlyData.get(month) || { invoices: 0, informalPayments: 0 };
-      current.invoices += parseFloat(inv.amount) || 0;
+      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+      current.incomingInvoices += parseFloat(inv.amount) || 0;
       monthlyData.set(month, current);
     });
 
+    // Outgoing invoices (income - they pay us)
+    outgoingInvoices?.forEach((inv: any) => {
+      const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
+      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+      current.outgoingInvoices += parseFloat(inv.amount) || 0;
+      monthlyData.set(month, current);
+    });
+
+    // Informal payments (expenses)
     informalPayments?.forEach((pay: any) => {
       const month = new Date(pay.payment_date).toISOString().substring(0, 7);
-      const current = monthlyData.get(month) || { invoices: 0, informalPayments: 0 };
+      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
       current.informalPayments += parseFloat(pay.amount) || 0;
       monthlyData.set(month, current);
     });
@@ -206,19 +281,24 @@ export async function GET(
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([month, data]) => ({
         month,
-        invoices: data.invoices,
+        incomingInvoices: data.incomingInvoices,
+        outgoingInvoices: data.outgoingInvoices,
         informalPayments: data.informalPayments,
-        total: data.invoices + data.informalPayments,
+        netTotal: data.outgoingInvoices - data.incomingInvoices - data.informalPayments,
       }));
 
     return NextResponse.json({
       supplier,
+      customer,
       financial: {
         grandTotal,
+        netBalance,
         invoices: invoiceStats,
+        outgoingInvoices: outgoingInvoiceStats,
         informalPayments: informalPaymentStats,
       },
       invoices: invoices || [],
+      outgoingInvoices: outgoingInvoices || [],
       informalPayments,
       projects,
       monthlySummary,

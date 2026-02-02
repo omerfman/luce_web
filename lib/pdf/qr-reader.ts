@@ -285,6 +285,20 @@ function parseKeyValueFormat(data: string): Partial<InvoiceQRData> {
     console.log('Found Supplier Name:', supplierMatch[1].trim());
   }
   
+  // Buyer VKN (for outgoing invoices) - many variations
+  const buyerVknMatch = data.match(/(?:AVKNTCKN|aliciVkn|alici_vkn|buyerVKN|buyer_vkn|AliciVergiNo)[:\s=]*(\d{10,11})/i);
+  if (buyerVknMatch) {
+    result.buyerVKN = buyerVknMatch[1];
+    console.log('Found Buyer VKN:', buyerVknMatch[1]);
+  }
+  
+  // Buyer Name (for outgoing invoices) - many variations
+  const buyerMatch = data.match(/(?:ALICI|alici|buyer|AliciAdi|alici_adi|AliciUnvan)[:\s=]*([^\n|]+)/i);
+  if (buyerMatch) {
+    result.buyerName = buyerMatch[1].trim();
+    console.log('Found Buyer Name:', buyerMatch[1].trim());
+  }
+  
   const fieldCount = Object.keys(result).length;
   console.log(`Key-Value parsing found ${fieldCount} fields`);
   

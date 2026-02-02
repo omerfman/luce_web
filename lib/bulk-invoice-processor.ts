@@ -1,10 +1,12 @@
 import { BulkInvoiceItem, BulkUploadStatus, InvoiceQRData } from '@/types';
 import { extractQRFromPDF, parseInvoiceQR } from '@/lib/pdf/qr-reader';
 import { getOrCreateSupplier, updateSupplierNameByVKN } from '@/lib/supabase/suppliers';
+import { getOrCreateCustomer } from '@/lib/supabase/customers';
 import { numberToTurkishCurrency } from '@/lib/utils';
 
 export interface BulkQRProcessingOptions {
   companyId: string;
+  isOutgoing?: boolean; // true = giden fatura (müşteri), false = gelen fatura (tedarikçi)
   onProgress?: (processed: number, total: number) => void;
   onItemProcessed?: (item: BulkInvoiceItem) => void;
 }
@@ -17,7 +19,7 @@ export async function processBulkQRCodes(
   files: File[],
   options: BulkQRProcessingOptions
 ): Promise<BulkInvoiceItem[]> {
-  const { companyId, onProgress, onItemProcessed } = options;
+  const { companyId, isOutgoing = false, onProgress, onItemProcessed } = options;
   
   console.log(`Starting bulk QR processing for ${files.length} files`);
   
@@ -63,7 +65,7 @@ export async function processBulkQRCodes(
             item.status = BulkUploadStatus.QR_SUCCESS;
 
             // Map QR data to form fields
-            await mapQRDataToFormFields(item, qrData, companyId);
+            await mapQRDataToFormFields(item, qrData, companyId, isOutgoing);
           } else {
             // No QR found - manual entry required
             item.status = BulkUploadStatus.QR_FAILED;
@@ -92,7 +94,8 @@ export async function processBulkQRCodes(
 async function mapQRDataToFormFields(
   item: BulkInvoiceItem,
   qrData: InvoiceQRData,
-  companyId: string
+  companyId: string,
+  isOutgoing: boolean = false
 ): Promise<void> {
   // Invoice number
   if (qrData.invoiceNumber) {
@@ -104,32 +107,51 @@ async function mapQRDataToFormFields(
     item.invoice_date = qrData.invoiceDate;
   }
 
-  // VKN
-  if (qrData.taxNumber) {
-    item.supplier_vkn = qrData.taxNumber;
-    item.vkn = qrData.taxNumber; // Also set vkn field for consistency
+  // VKN - Giden faturalarda buyerVKN (alıcı VKN), gelen faturalarda taxNumber (satıcı VKN)
+  const vknToUse = isOutgoing ? qrData.buyerVKN : qrData.taxNumber;
+  const nameToUse = isOutgoing ? qrData.buyerName : qrData.supplierName;
 
-    // Try to get supplier name from cache
+  if (vknToUse) {
+    item.supplier_vkn = vknToUse;
+    item.vkn = vknToUse; // Also set vkn field for consistency
+
+    // Try to get supplier/customer name from database
     try {
-      const supplier = await getOrCreateSupplier(
-        qrData.taxNumber,
-        qrData.supplierName || 'Bilinmeyen Tedarikçi',
-        companyId
-      );
+      if (isOutgoing) {
+        // Giden fatura - müşteri bilgisi
+        const customer = await getOrCreateCustomer(
+          vknToUse,
+          nameToUse || 'Bilinmeyen Müşteri',
+          companyId
+        );
 
-      if (supplier && supplier.name && supplier.name !== 'Bilinmeyen Tedarikçi') {
-        item.supplier_name = supplier.name;
-      } else if (qrData.supplierName) {
-        item.supplier_name = qrData.supplierName;
+        if (customer && customer.name && customer.name !== 'Bilinmeyen Müşteri') {
+          item.supplier_name = customer.name;
+        } else if (nameToUse) {
+          item.supplier_name = nameToUse;
+        }
+      } else {
+        // Gelen fatura - tedarikçi bilgisi
+        const supplier = await getOrCreateSupplier(
+          vknToUse,
+          nameToUse || 'Bilinmeyen Tedarikçi',
+          companyId
+        );
+
+        if (supplier && supplier.name && supplier.name !== 'Bilinmeyen Tedarikçi') {
+          item.supplier_name = supplier.name;
+        } else if (nameToUse) {
+          item.supplier_name = nameToUse;
+        }
       }
     } catch (error) {
-      console.error('Error looking up supplier:', error);
-      if (qrData.supplierName) {
-        item.supplier_name = qrData.supplierName;
+      console.error('Error looking up supplier/customer:', error);
+      if (nameToUse) {
+        item.supplier_name = nameToUse;
       }
     }
-  } else if (qrData.supplierName) {
-    item.supplier_name = qrData.supplierName;
+  } else if (nameToUse) {
+    item.supplier_name = nameToUse;
   }
 
   // Financial fields

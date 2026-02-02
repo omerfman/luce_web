@@ -76,6 +76,34 @@ export async function GET(
       totalGoodsServices: invoices.reduce((sum: number, inv: any) => sum + (inv.goods_services_total || 0), 0),
     };
 
+    // Get outgoing invoices linked to this project (invoices we sent to customers)
+    const { data: outgoingInvoiceLinks, error: outgoingInvoicesError } = await supabase
+      .from('outgoing_invoice_project_links')
+      .select(`
+        outgoing_invoice:outgoing_invoices (
+          id,
+          invoice_number,
+          invoice_date,
+          amount,
+          withholding_amount,
+          customer_name,
+          customer_vkn
+        )
+      `)
+      .eq('project_id', projectId);
+
+    if (outgoingInvoicesError) {
+      console.error('Error fetching outgoing invoices:', outgoingInvoicesError);
+    }
+
+    // Calculate outgoing invoice totals
+    const outgoingInvoices = outgoingInvoiceLinks?.map((link: any) => link.outgoing_invoice).filter(Boolean) || [];
+    const outgoingInvoiceStats = {
+      count: outgoingInvoices.length,
+      totalAmount: outgoingInvoices.reduce((sum: number, inv: any) => sum + (inv.amount || 0), 0),
+      totalWithholding: outgoingInvoices.reduce((sum: number, inv: any) => sum + (inv.withholding_amount || 0), 0),
+    };
+
     // Get informal payments for this project
     const { data: informalPayments, error: paymentsError } = await supabase
       .from('informal_payments')
@@ -150,17 +178,29 @@ export async function GET(
     }
 
     // Calculate monthly spending (last 12 months)
-    const monthlySpending: Record<string, { invoices: number; informalPayments: number }> = {};
+    const monthlySpending: Record<string, { incomingInvoices: number; outgoingInvoices: number; informalPayments: number }> = {};
     
-    // Process invoices by month
+    // Process incoming invoices by month (expenses)
     invoices.forEach((invoice: any) => {
       if (invoice.invoice_date) {
         const date = new Date(invoice.invoice_date);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!monthlySpending[monthKey]) {
-          monthlySpending[monthKey] = { invoices: 0, informalPayments: 0 };
+          monthlySpending[monthKey] = { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
         }
-        monthlySpending[monthKey].invoices += invoice.amount || 0;
+        monthlySpending[monthKey].incomingInvoices += invoice.amount || 0;
+      }
+    });
+
+    // Process outgoing invoices by month (income)
+    outgoingInvoices.forEach((invoice: any) => {
+      if (invoice.invoice_date) {
+        const date = new Date(invoice.invoice_date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlySpending[monthKey]) {
+          monthlySpending[monthKey] = { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+        }
+        monthlySpending[monthKey].outgoingInvoices += invoice.amount || 0;
       }
     });
 
@@ -170,34 +210,77 @@ export async function GET(
         const date = new Date(payment.payment_date);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!monthlySpending[monthKey]) {
-          monthlySpending[monthKey] = { invoices: 0, informalPayments: 0 };
+          monthlySpending[monthKey] = { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
         }
         monthlySpending[monthKey].informalPayments += payment.amount || 0;
       }
     });
 
+    // Calculate net balance: outgoing (income) - incoming (expenses) - informal (expenses)
+    const netBalance = outgoingInvoiceStats.totalAmount - invoiceStats.totalAmount - informalPaymentStats.totalAmount;
+
     // Calculate grand totals
-    const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount;
+    const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount + outgoingInvoiceStats.totalAmount;
 
-    // Aggregate suppliers by VKN and name
-    const supplierMap = new Map<string, { supplierId?: string; name: string; vkn?: string; total: number; invoiceCount: number; paymentCount: number }>();
+    // Aggregate suppliers (from incoming invoices) and customers (from outgoing invoices) by VKN and name
+    const supplierMap = new Map<string, { 
+      supplierId?: string; 
+      customerId?: string;
+      name: string; 
+      vkn?: string; 
+      total: number; 
+      incomingInvoiceCount: number; 
+      outgoingInvoiceCount: number;
+      paymentCount: number;
+      role: 'supplier' | 'customer' | 'both';
+    }>();
 
-    // Process invoices
+    // Process incoming invoices (suppliers)
     invoices.forEach((invoice: any) => {
       const key = invoice.supplier_vkn || invoice.supplier_name || 'Bilinmeyen';
       const existing = supplierMap.get(key);
       
       if (existing) {
         existing.total += invoice.amount || 0;
-        existing.invoiceCount++;
+        existing.incomingInvoiceCount++;
+        if (existing.role === 'customer') {
+          existing.role = 'both';
+        }
       } else {
         supplierMap.set(key, {
           supplierId: invoice.supplier_id || undefined,
           name: invoice.supplier_name || 'Bilinmeyen',
           vkn: invoice.supplier_vkn,
           total: invoice.amount || 0,
-          invoiceCount: 1,
+          incomingInvoiceCount: 1,
+          outgoingInvoiceCount: 0,
           paymentCount: 0,
+          role: 'supplier',
+        });
+      }
+    });
+
+    // Process outgoing invoices (customers)
+    outgoingInvoices.forEach((invoice: any) => {
+      const key = invoice.customer_vkn || invoice.customer_name || 'Bilinmeyen';
+      const existing = supplierMap.get(key);
+      
+      if (existing) {
+        existing.total -= invoice.amount || 0; // Subtract because it's income
+        existing.outgoingInvoiceCount++;
+        if (existing.role === 'supplier') {
+          existing.role = 'both';
+        }
+      } else {
+        supplierMap.set(key, {
+          customerId: invoice.customer_id || undefined,
+          name: invoice.customer_name || 'Bilinmeyen',
+          vkn: invoice.customer_vkn,
+          total: -(invoice.amount || 0), // Negative because it's income
+          incomingInvoiceCount: 0,
+          outgoingInvoiceCount: 1,
+          paymentCount: 0,
+          role: 'customer',
         });
       }
     });
@@ -224,8 +307,10 @@ export async function GET(
           name: supplierName,
           vkn: supplierVkn,
           total: payment.amount || 0,
-          invoiceCount: 0,
+          incomingInvoiceCount: 0,
+          outgoingInvoiceCount: 0,
           paymentCount: 1,
+          role: 'supplier' as const,
         });
       }
     });
@@ -248,7 +333,9 @@ export async function GET(
       },
       financial: {
         grandTotal,
+        netBalance,
         invoices: invoiceStats,
+        outgoingInvoices: outgoingInvoiceStats,
         informalPayments: informalPaymentStats,
       },
       files: fileStats,

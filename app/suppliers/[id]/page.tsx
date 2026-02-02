@@ -7,12 +7,19 @@ import { supabase } from '@/lib/supabase/client';
 
 interface SupplierSummary {
   supplier: any;
+  customer: any | null;
   financial: {
     grandTotal: number;
+    netBalance: number;
     invoices: {
       count: number;
       totalAmount: number;
       totalTax: number;
+      totalWithholding: number;
+    };
+    outgoingInvoices: {
+      count: number;
+      totalAmount: number;
       totalWithholding: number;
     };
     informalPayments: {
@@ -21,13 +28,15 @@ interface SupplierSummary {
     };
   };
   invoices: any[];
+  outgoingInvoices: any[];
   informalPayments: any[];
   projects: any[];
   monthlySummary: {
     month: string;
-    invoices: number;
+    incomingInvoices: number;
+    outgoingInvoices: number;
     informalPayments: number;
-    total: number;
+    netTotal: number;
   }[];
 }
 
@@ -39,10 +48,9 @@ export default function SupplierDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SupplierSummary | null>(null);
-  const [activeTab, setActiveTab] = useState<'invoices' | 'payments' | 'all'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'incoming' | 'outgoing' | 'payments'>('all');
 
   useEffect(() => {
-    console.log('🔍 [Supplier Detail] useEffect triggered, supplierId:', supplierId);
     if (supplierId) {
       loadSummary();
     }
@@ -64,32 +72,14 @@ export default function SupplierDetailPage() {
   async function loadSummary() {
     try {
       setLoading(true);
-      console.log('📡 [Supplier Detail] Fetching data for supplier:', supplierId);
-      console.log('📡 [Supplier Detail] API URL:', `/api/suppliers/${supplierId}/summary`);
-      
       const response = await fetch(`/api/suppliers/${supplierId}/summary`);
       
-      console.log('📡 [Supplier Detail] Response status:', response.status);
-      console.log('📡 [Supplier Detail] Response ok:', response.ok);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ [Supplier Detail] Error response:', errorText);
         throw new Error('Firma bilgileri yüklenemedi');
       }
 
       const data = await response.json();
       console.log('✅ [Supplier Detail] Data received:', data);
-      console.log('✅ [Supplier Detail] Financial summary:', data.financial);
-      console.log('✅ [Supplier Detail] Invoices count:', data.invoices?.length || 0);
-      console.log('✅ [Supplier Detail] Payments count:', data.informalPayments?.length || 0);
-      console.log('✅ [Supplier Detail] Projects count:', data.projects?.length || 0);
-      if (data.projects?.length > 0) {
-        console.log('✅ [Supplier Detail] Projects:', data.projects);
-      } else {
-        console.log('⚠️ [Supplier Detail] No projects found in response');
-      }
-      
       setSummary(data);
     } catch (err: any) {
       console.error('❌ [Supplier Detail] Error:', err);
@@ -117,27 +107,18 @@ export default function SupplierDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen">
-        <Sidebar>
-          <div></div>
-        </Sidebar>
-        <div className="flex-1 bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Yükleniyor...</p>
-          </div>
+      <Sidebar>
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
         </div>
-      </div>
+      </Sidebar>
     );
   }
 
   if (error || !summary) {
     return (
-      <div className="flex h-screen">
-        <Sidebar>
-          <div></div>
-        </Sidebar>
-        <div className="flex-1 bg-gray-50 flex items-center justify-center">
+      <Sidebar>
+        <div className="flex items-center justify-center py-12">
           <div className="text-center">
             <div className="text-red-600 text-5xl mb-4">⚠️</div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Hata Oluştu</h2>
@@ -149,11 +130,11 @@ export default function SupplierDetailPage() {
             </button>
           </div>
         </div>
-      </div>
+      </Sidebar>
     );
   }
 
-  const { supplier, financial, invoices, informalPayments, projects, monthlySummary } = summary;
+  const { supplier, financial, invoices, outgoingInvoices, informalPayments, projects, monthlySummary } = summary;
 
   const getSupplierTypeBadge = (type: string) => {
     switch (type) {
@@ -166,302 +147,342 @@ export default function SupplierDetailPage() {
     }
   };
 
-  const filteredTransactions = activeTab === 'invoices' 
-    ? invoices 
-    : activeTab === 'payments' 
-    ? informalPayments 
-    : [...invoices.map(i => ({ ...i, type: 'invoice' })), ...informalPayments.map(p => ({ ...p, type: 'payment' }))].sort((a, b) => {
-        const dateA = new Date(a.invoice_date || a.payment_date).getTime();
-        const dateB = new Date(b.invoice_date || b.payment_date).getTime();
-        return dateB - dateA;
-      });
+  const allTransactions = [
+    ...invoices.map(i => ({ ...i, type: 'incoming' as const })),
+    ...outgoingInvoices.map(i => ({ ...i, type: 'outgoing' as const })),
+    ...informalPayments.map(p => ({ ...p, type: 'payment' as const }))
+  ].sort((a, b) => {
+    const dateA = new Date(a.invoice_date || a.payment_date).getTime();
+    const dateB = new Date(b.invoice_date || b.payment_date).getTime();
+    return dateB - dateA;
+  });
+
+  const filteredTransactions = 
+    activeTab === 'all' ? allTransactions :
+    activeTab === 'incoming' ? invoices.map(i => ({ ...i, type: 'incoming' as const })) :
+    activeTab === 'outgoing' ? outgoingInvoices.map(i => ({ ...i, type: 'outgoing' as const })) :
+    informalPayments.map(p => ({ ...p, type: 'payment' as const }));
+
+  const hasIncoming = invoices.length > 0 || informalPayments.length > 0;
+  const hasOutgoing = outgoingInvoices.length > 0;
+  const isBothRoles = hasIncoming && hasOutgoing;
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar>
-        <div></div>
-      </Sidebar>
-      <div className="flex-1 bg-gray-50 overflow-auto">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-7xl">
-          {/* Header */}
-          <div className="mb-6 lg:mb-8">
-            <button
-              onClick={() => router.back()}
-              className="mb-4 px-4 py-2 text-gray-700 hover:text-gray-900 font-medium rounded-lg border border-gray-300 hover:border-gray-400 transition-colors flex items-center gap-2">
-              <span>←</span> Geri
-            </button>
-            
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                  {supplier.name}
-                </h1>
-                <div className="flex flex-wrap gap-3 items-center">
-                  {getSupplierTypeBadge(supplier.supplier_type)}
-                  {supplier.vkn && (
-                    <span className="text-sm text-gray-600 font-mono bg-gray-100 px-3 py-1 rounded-lg">
-                      VKN: {supplier.vkn}
-                    </span>
-                  )}
-                </div>
+    <Sidebar>
+      <div className="space-y-4 md:space-y-6">
+        <div className="bg-white rounded-lg shadow-sm p-4 md:p-6">
+          <button
+            onClick={() => router.back()}
+            className="mb-4 px-4 py-2 text-gray-700 hover:text-gray-900 font-medium rounded-lg border border-gray-300 hover:border-gray-400 transition-colors flex items-center gap-2">
+            <span>←</span> Geri
+          </button>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                {supplier.name}
+              </h1>
+              <div className="flex flex-wrap gap-3 items-center">
+                {getSupplierTypeBadge(supplier.supplier_type)}
+                {supplier.vkn && (
+                  <span className="text-sm text-gray-600 font-mono bg-gray-100 px-3 py-1 rounded-lg">
+                    VKN: {supplier.vkn}
+                  </span>
+                )}
+                {isBothRoles && (
+                  <span className="text-sm px-3 py-1 bg-purple-100 text-purple-700 rounded-lg font-semibold">
+                    🔄 Tedarikçi & Müşteri
+                  </span>
+                )}
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Financial Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 lg:mb-8">
-            {/* Grand Total */}
-            <div className="bg-white rounded-lg shadow border border-gray-900 p-6 sm:p-7 col-span-full">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">
-                💰 Toplam Harcama
-              </h2>
-              <p className="text-4xl font-bold text-gray-900 break-words">
-                {formatCurrency(financial.grandTotal)}
-              </p>
-            </div>
-
-            {/* Invoices Card */}
-            <div className="bg-white rounded-lg shadow border border-gray-200 p-6 sm:p-7">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-bold text-gray-900">
-                  📄 Faturalar
-                </h2>
-                <span className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm font-semibold">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {hasIncoming && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">📥 Gelen Faturalar</h3>
+                <span className="px-2 py-1 bg-red-600 text-white rounded text-xs font-semibold">
                   {financial.invoices.count}
                 </span>
               </div>
-              <div className="space-y-3">
-                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <p className="text-xs font-semibold text-gray-600 mb-1">Toplam Tutar</p>
-                  <p className="text-2xl font-bold text-gray-900 break-words">
-                    {formatCurrency(financial.invoices.totalAmount)}
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold mb-1">KDV</p>
-                  <p className="text-sm font-bold text-gray-900 break-words">
-                    {formatCurrency(financial.invoices.totalTax)}
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-semibold mb-1">Tevkifat</p>
-                  <p className="text-sm font-bold text-gray-900 break-words">
-                    {formatCurrency(financial.invoices.totalWithholding)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Informal Payments Card */}
-            <div className="bg-white rounded-lg shadow border border-gray-200 p-6 sm:p-7">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-bold text-gray-900">
-                  💵 Gayri Resmi
-                </h2>
-                <span className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm font-semibold">
-                  {financial.informalPayments.count}
-                </span>
-              </div>
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                <p className="text-xs font-semibold text-gray-600 mb-1">Toplam Tutar</p>
-                <p className="text-2xl font-bold text-gray-900 break-words">
-                  {formatCurrency(financial.informalPayments.totalAmount)}
-                </p>
-              </div>
-            </div>
-
-            {/* Projects Card */}
-            <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span>🏗️</span> Projeler
-              </h2>
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs text-gray-600 font-semibold mb-1">Çalışılan Proje Sayısı</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {projects.length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Chart */}
-          {monthlySummary.length > 0 && (
-            <div className="bg-white rounded-lg shadow border border-gray-200 p-6 sm:p-7 mb-6 lg:mb-8">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <span>📊</span> Aylık Harcama Grafiği
-              </h2>
-              <div className="space-y-6">
-                {monthlySummary.map(({ month, invoices: inv, informalPayments: pay, total }) => {
-                  const maxValue = Math.max(...monthlySummary.map(m => m.total));
-                  const [year, monthNum] = month.split('-');
-                  const monthName = new Date(parseInt(year), parseInt(monthNum) - 1).toLocaleDateString('tr-TR', { 
-                    month: 'short', 
-                    year: 'numeric' 
-                  });
-
-                  return (
-                    <div key={month} className="space-y-2">
-                      <div className="flex justify-between items-center text-xs sm:text-sm">
-                        <span className="font-bold text-gray-800">{monthName}</span>
-                        <span className="text-gray-900 font-bold">{formatCurrency(total)}</span>
-                      </div>
-                      <div className="relative h-8 sm:h-10 bg-gray-100 rounded-lg overflow-hidden">
-                        {inv > 0 && (
-                          <div
-                            className="absolute h-full bg-blue-600 transition-all"
-                            style={{ width: `${(inv / maxValue) * 100}%` }}
-                            title={`Faturalar: ${formatCurrency(inv)}`}
-                          />
-                        )}
-                        {pay > 0 && (
-                          <div
-                            className="absolute h-full bg-red-600 transition-all"
-                            style={{ 
-                              left: `${(inv / maxValue) * 100}%`,
-                              width: `${(pay / maxValue) * 100}%` 
-                            }}
-                            title={`Gayri Resmi: ${formatCurrency(pay)}`}
-                          />
-                        )}
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-xs text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <div className="w-3 h-3 bg-blue-600 rounded flex-shrink-0"></div>
-                          <span className="break-words">Faturalar: {formatCurrency(inv)}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-3 h-3 bg-red-600 rounded flex-shrink-0"></div>
-                          <span className="break-words">Gayri Resmi: {formatCurrency(pay)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              <p className="text-xl md:text-2xl font-bold text-red-700">
+                {formatCurrency(financial.invoices.totalAmount)}
+              </p>
+              <div className="text-xs text-gray-600 mt-2">
+                <div>KDV: {formatCurrency(financial.invoices.totalTax)}</div>
+                {financial.invoices.totalWithholding > 0 && (
+                  <div>Tevkifat: {formatCurrency(financial.invoices.totalWithholding)}</div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Transactions List */}
-          <div className="bg-white rounded-lg shadow border border-gray-200 p-6 sm:p-7">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-              <span>📋</span> İşlemler
-            </h2>
+          {hasOutgoing && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">📤 Giden Faturalar</h3>
+                <span className="px-2 py-1 bg-green-600 text-white rounded text-xs font-semibold">
+                  {financial.outgoingInvoices.count}
+                </span>
+              </div>
+              <p className="text-xl md:text-2xl font-bold text-green-700">
+                {formatCurrency(financial.outgoingInvoices.totalAmount)}
+              </p>
+              {financial.outgoingInvoices.totalWithholding > 0 && (
+                <div className="text-xs text-gray-600 mt-2">
+                  Tevkifat: {formatCurrency(financial.outgoingInvoices.totalWithholding)}
+                </div>
+              )}
+            </div>
+          )}
 
-            {/* Tab Buttons */}
-            <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4">
+          {financial.informalPayments.count > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">💵 Gayri Resmi</h3>
+                <span className="px-2 py-1 bg-amber-600 text-white rounded text-xs font-semibold">
+                  {financial.informalPayments.count}
+                </span>
+              </div>
+              <p className="text-xl md:text-2xl font-bold text-amber-700">
+                {formatCurrency(financial.informalPayments.totalAmount)}
+              </p>
+            </div>
+          )}
+
+          {isBothRoles && (
+            <div className="bg-white rounded-lg shadow-sm border-2 border-purple-200 p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">⚖️ Net Bakiye</h3>
+              <p className={`text-xl md:text-2xl font-bold ${
+                financial.netBalance >= 0
+                  ? 'text-green-700'
+                  : 'text-red-700'
+              }`}>
+                {formatCurrency(financial.netBalance)}
+              </p>
+              <div className="text-xs text-gray-600 mt-2">
+                Gelir - Gider
+              </div>
+            </div>
+          )}
+
+          {projects.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">🏗️ Projeler</h3>
+              <p className="text-2xl md:text-3xl font-bold text-gray-900">
+                {projects.length}
+              </p>
+              <div className="text-xs text-gray-600 mt-2">
+                Çalışılan proje sayısı
+              </div>
+            </div>
+          )}
+        </div>
+
+        {monthlySummary.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm p-4 md:p-6">
+            <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>📊</span> Aylık Özet
+            </h2>
+            <div className="space-y-4">
+              {monthlySummary.map(({ month, incomingInvoices, outgoingInvoices, informalPayments, netTotal }) => {
+                const maxValue = Math.max(
+                  ...monthlySummary.map(m => 
+                    Math.max(
+                      m.incomingInvoices + m.informalPayments,
+                      m.outgoingInvoices
+                    )
+                  )
+                );
+                const [year, monthNum] = month.split('-');
+                const monthName = new Date(parseInt(year), parseInt(monthNum) - 1).toLocaleDateString('tr-TR', { 
+                  month: 'short', 
+                  year: 'numeric' 
+                });
+
+                return (
+                  <div key={month} className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="font-bold text-gray-800">{monthName}</span>
+                      <span className={`font-bold ${netTotal >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        Net: {formatCurrency(netTotal)}
+                      </span>
+                    </div>
+                    
+                    {outgoingInvoices > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-green-600">
+                          <span>📤 Giden Faturalar</span>
+                          <span>{formatCurrency(outgoingInvoices)}</span>
+                        </div>
+                        <div className="h-6 bg-gray-100 rounded-lg overflow-hidden">
+                          <div
+                            className="h-full bg-green-600 transition-all"
+                            style={{ width: `${(outgoingInvoices / maxValue) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {(incomingInvoices > 0 || informalPayments > 0) && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-red-600">
+                          <span>📥 Gelen Faturalar</span>
+                          <span>{formatCurrency(incomingInvoices)}</span>
+                        </div>
+                        <div className="h-6 bg-gray-100 rounded-lg overflow-hidden">
+                          <div
+                            className="h-full bg-red-600 transition-all"
+                            style={{ width: `${(incomingInvoices / maxValue) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {informalPayments > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-amber-600">
+                          <span>💵 Gayri Resmi</span>
+                          <span>{formatCurrency(informalPayments)}</span>
+                        </div>
+                        <div className="h-6 bg-gray-100 rounded-lg overflow-hidden">
+                          <div
+                            className="h-full bg-amber-600 transition-all"
+                            style={{ width: `${(informalPayments / maxValue) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-lg shadow-sm p-4 md:p-6">
+          <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span>📋</span> İşlemler
+          </h2>
+
+          <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                activeTab === 'all'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}>
+              Tümü ({allTransactions.length})
+            </button>
+            {hasIncoming && (
               <button
-                onClick={() => setActiveTab('all')}
-                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                  activeTab === 'all'
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}>
-                Tümü ({invoices.length + informalPayments.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('invoices')}
-                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                  activeTab === 'invoices'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                }`}>
-                Faturalar ({invoices.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('payments')}
-                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                  activeTab === 'payments'
+                onClick={() => setActiveTab('incoming')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeTab === 'incoming'
                     ? 'bg-red-600 text-white'
                     : 'bg-red-50 text-red-700 hover:bg-red-100'
                 }`}>
-                Gayri Resmi ({informalPayments.length})
+                📥 Gelen ({invoices.length})
               </button>
-            </div>
+            )}
+            {hasOutgoing && (
+              <button
+                onClick={() => setActiveTab('outgoing')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeTab === 'outgoing'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-green-50 text-green-700 hover:bg-green-100'
+                }`}>
+                📤 Giden ({outgoingInvoices.length})
+              </button>
+            )}
+            {informalPayments.length > 0 && (
+              <button
+                onClick={() => setActiveTab('payments')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  activeTab === 'payments'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                }`}>
+                💵 Gayri Resmi ({informalPayments.length})
+              </button>
+            )}
+          </div>
 
-            {/* Transactions Table */}
-            {filteredTransactions.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-lg">Henüz işlem bulunmuyor</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto -mx-6 sm:mx-0">
+          {filteredTransactions.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <p className="text-lg">Henüz işlem bulunmuyor</p>
+            </div>
+          ) : (
+            <>
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-100 border-b-2 border-gray-300">
-                      <th className="text-left py-4 px-4 font-bold text-gray-900">Tip</th>
-                      <th className="text-left py-4 px-4 font-bold text-gray-900">Tarih</th>
-                      <th className="text-left py-4 px-4 font-bold text-gray-900 hidden sm:table-cell">Proje</th>
-                      <th className="text-left py-4 px-4 font-bold text-gray-900 hidden md:table-cell">Açıklama</th>
-                      <th className="text-right py-4 px-4 font-bold text-gray-900">Tutar</th>
-                      <th className="text-center py-4 px-4 font-bold text-gray-900">İşlem</th>
+                      <th className="text-left py-3 px-4 font-bold text-gray-900">Tip</th>
+                      <th className="text-left py-3 px-4 font-bold text-gray-900">Tarih</th>
+                      <th className="text-left py-3 px-4 font-bold text-gray-900">No / Açıklama</th>
+                      <th className="text-left py-3 px-4 font-bold text-gray-900">Proje</th>
+                      <th className="text-right py-3 px-4 font-bold text-gray-900">Tutar</th>
+                      <th className="text-center py-3 px-4 font-bold text-gray-900">İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredTransactions.map((transaction: any, index: number) => {
-                      const isInvoice = transaction.type === 'invoice' || transaction.invoice_number;
-                      const date = isInvoice ? transaction.invoice_date : transaction.payment_date;
-                      // Use 'amount' field for both invoices and payments
+                      const isPayment = transaction.type === 'payment';
+                      const isOutgoing = transaction.type === 'outgoing';
+                      const date = isPayment ? transaction.payment_date : transaction.invoice_date;
                       const amount = transaction.amount;
-                      const description = isInvoice ? transaction.invoice_number : transaction.description;
+                      const description = isPayment ? transaction.description : transaction.invoice_number;
                       
-                      // For invoices: get projects from project_links array (many-to-many)
-                      // For payments: use direct project_id (one-to-one)
                       let projectNames = '';
-                      if (isInvoice && transaction.project_links && transaction.project_links.length > 0) {
-                        // Invoice can have multiple projects
+                      if (!isPayment && transaction.project_links?.length > 0) {
                         projectNames = transaction.project_links
                           .map((link: any) => link.project?.name)
                           .filter(Boolean)
                           .join(', ');
-                      } else if (!isInvoice && transaction.project_id) {
-                        // Payment has single project
+                      } else if (isPayment && transaction.project_id) {
                         const project = projects.find((p: any) => p.id === transaction.project_id);
                         projectNames = project?.name || '';
                       }
 
-                      // Detailed logging for debugging (first transaction only)
-                      if (index === 0) {
-                        console.log('🔍 [Transaction Debug] First transaction:', {
-                          type: isInvoice ? 'invoice' : 'payment',
-                          id: transaction.id,
-                          amount,
-                          description,
-                          project_links: transaction.project_links,
-                          project_id: transaction.project_id,
-                          resolved_projects: projectNames
-                        });
-                        console.log('🔍 [Transaction Debug] Available projects:', projects.map((p: any) => ({ id: p.id, name: p.name })));
-                      }
-
                       return (
-                        <tr key={`${isInvoice ? 'inv' : 'pay'}-${transaction.id}-${index}`} className="border-b border-gray-200 hover:bg-gray-50 transition-all">
-                          <td className="py-4 px-4">
-                            {isInvoice ? (
-                              <span className="inline-flex items-center gap-1 text-blue-700 font-bold bg-blue-50 px-2.5 py-1 rounded-lg text-xs">
-                                📄 Fatura
+                        <tr key={`${transaction.type}-${transaction.id}-${index}`} className="border-b border-gray-200 hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            {isOutgoing ? (
+                              <span className="inline-flex items-center gap-1 text-green-700 font-bold bg-green-50 px-2 py-1 rounded text-xs">
+                                📤 Giden
+                              </span>
+                            ) : isPayment ? (
+                              <span className="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2 py-1 rounded text-xs">
+                                💵 Ödeme
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 px-2.5 py-1 rounded-lg text-xs">
-                                💵 Ödeme
+                              <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 px-2 py-1 rounded text-xs">
+                                📥 Gelen
                               </span>
                             )}
                           </td>
-                          <td className="py-4 px-4 text-gray-900 font-semibold">
+                          <td className="py-3 px-4 text-gray-900 font-semibold">
                             {formatDate(date)}
                           </td>
-                          <td className="py-4 px-4 text-gray-700 hidden sm:table-cell">
+                          <td className="py-3 px-4 text-gray-700">
+                            {description || '-'}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600">
                             {projectNames || <span className="text-gray-400 italic">Atanmamış</span>}
                           </td>
-                          <td className="py-4 px-4 text-gray-600 hidden md:table-cell">
-                            <span className="line-clamp-1" title={description}>
-                              {description || '-'}
-                            </span>
+                          <td className={`py-3 px-4 text-right font-bold ${
+                            isOutgoing ? 'text-green-700' : 'text-red-700'
+                          }`}>
+                            {isOutgoing ? '+' : '-'}{formatCurrency(parseFloat(amount))}
                           </td>
-                          <td className="py-4 px-4 text-right font-bold text-gray-900">
-                            {formatCurrency(parseFloat(amount))}
-                          </td>
-                          <td className="py-4 px-4 text-center">
-                            {isInvoice && transaction.file_path ? (
+                          <td className="py-3 px-4 text-center">
+                            {!isPayment && transaction.file_path ? (
                               <button
                                 onClick={async () => {
                                   const url = await getSignedUrl(transaction.file_path);
@@ -469,8 +490,7 @@ export default function SupplierDetailPage() {
                                     window.open(url, '_blank');
                                   }
                                 }}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-                                title="PDF'i Görüntüle">
+                                className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700">
                                 📄 PDF
                               </button>
                             ) : (
@@ -481,49 +501,97 @@ export default function SupplierDetailPage() {
                       );
                     })}
                   </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-200 font-bold border-t-2 border-gray-300">
-                      <td className="py-5 px-4 text-gray-900 font-bold" colSpan={5}>
-                        Toplam ({filteredTransactions.length} işlem)
-                      </td>
-                      <td className="py-5 px-4 text-right text-gray-900 text-base font-bold">
-                        {formatCurrency(
-                          filteredTransactions.reduce((sum: number, t: any) => {
-                            const amount = t.amount;
-                            return sum + (parseFloat(amount) || 0);
-                          }, 0)
-                        )}
-                      </td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
-            )}
-          </div>
 
-          {/* Projects List */}
-          {projects.length > 0 && (
-            <div className="bg-white rounded-lg shadow border border-gray-200 p-6 sm:p-7 mt-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <span>🏗️</span> Çalışılan Projeler
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects.map((project: any) => (
-                  <button
-                    key={project.id}
-                    onClick={() => router.push(`/projects/${project.id}`)}
-                    className="p-4 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 hover:border-gray-300 transition-all text-left">
-                    <p className="font-semibold text-gray-900">{project.name}</p>
-                    {project.project_code && (
-                      <p className="text-sm text-gray-600 mt-1 font-mono">{project.project_code}</p>
-                    )}
-                  </button>
-                ))}
+              <div className="lg:hidden space-y-3">
+                {filteredTransactions.map((transaction: any, index: number) => {
+                  const isPayment = transaction.type === 'payment';
+                  const isOutgoing = transaction.type === 'outgoing';
+                  const date = isPayment ? transaction.payment_date : transaction.invoice_date;
+                  const amount = transaction.amount;
+                  const description = isPayment ? transaction.description : transaction.invoice_number;
+                  
+                  let projectNames = '';
+                  if (!isPayment && transaction.project_links?.length > 0) {
+                    projectNames = transaction.project_links
+                      .map((link: any) => link.project?.name)
+                      .filter(Boolean)
+                      .join(', ');
+                  } else if (isPayment && transaction.project_id) {
+                    const project = projects.find((p: any) => p.id === transaction.project_id);
+                    projectNames = project?.name || '';
+                  }
+
+                  return (
+                    <div key={`${transaction.type}-${transaction.id}-${index}`} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-start justify-between mb-2">
+                        {isOutgoing ? (
+                          <span className="inline-flex items-center gap-1 text-green-700 font-bold bg-green-100 px-2 py-1 rounded text-xs">
+                            📤 Giden
+                          </span>
+                        ) : isPayment ? (
+                          <span className="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-100 px-2 py-1 rounded text-xs">
+                            💵 Ödeme
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-100 px-2 py-1 rounded text-xs">
+                            📥 Gelen
+                          </span>
+                        )}
+                        <span className="text-sm text-gray-600">{formatDate(date)}</span>
+                      </div>
+                      
+                      <div className="mb-2">
+                        <div className="text-sm font-semibold text-gray-900">{description}</div>
+                        {projectNames && (
+                          <div className="text-xs text-gray-600 mt-1">🏗️ {projectNames}</div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className={`text-lg font-bold ${isOutgoing ? 'text-green-700' : 'text-red-700'}`}>
+                          {isOutgoing ? '+' : '-'}{formatCurrency(parseFloat(amount))}
+                        </span>
+                        {!isPayment && transaction.file_path && (
+                          <button
+                            onClick={async () => {
+                              const url = await getSignedUrl(transaction.file_path);
+                              if (url !== '#') {
+                                window.open(url, '_blank');
+                              }
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700">
+                            📄 PDF
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            </>
           )}
         </div>
+
+        {projects.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm p-4 md:p-6">
+            <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>🏗️</span> Çalışılan Projeler
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {projects.map((project: any) => (
+                <button
+                  key={project.id}
+                  onClick={() => router.push(`/projects/${project.id}`)}
+                  className="p-4 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 hover:border-gray-300 transition-all text-left">
+                  <p className="font-semibold text-gray-900">{project.name}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Sidebar>
   );
 }

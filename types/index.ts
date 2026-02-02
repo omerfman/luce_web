@@ -67,6 +67,7 @@ export interface Subcontractor {
 export interface InvoiceQRData {
   taxNumber?: string;        // VKN/TCKN (satıcı vkntckn)
   buyerVKN?: string;         // Alıcı VKN (avkntckn)
+  buyerName?: string;        // Alıcı Adı
   invoiceNumber?: string;    // Fatura No
   invoiceDate?: string;      // Fatura Tarihi
   totalAmount?: number;      // Toplam Tutar
@@ -476,12 +477,18 @@ export interface ProjectSummary {
   };
   financial: {
     grandTotal: number;
+    netBalance: number;
     invoices: {
       count: number;
       totalAmount: number;
       totalVAT: number;
       totalWithholding: number;
       totalGoodsServices: number;
+    };
+    outgoingInvoices: {
+      count: number;
+      totalAmount: number;
+      totalWithholding: number;
     };
     informalPayments: {
       count: number;
@@ -490,14 +497,17 @@ export interface ProjectSummary {
   };
   files: ProjectFileStats;
   activities: ProjectActivityLog[];
-  monthlySpending: Record<string, { invoices: number; informalPayments: number }>;
+  monthlySpending: Record<string, { incomingInvoices: number; outgoingInvoices: number; informalPayments: number }>;
   suppliers: Array<{
     supplierId?: string;
+    customerId?: string;
     name: string;
     vkn?: string;
     total: number;
-    invoiceCount: number;
+    incomingInvoiceCount: number;
+    outgoingInvoiceCount: number;
     paymentCount: number;
+    role: 'supplier' | 'customer' | 'both';
   }>;
 }
 

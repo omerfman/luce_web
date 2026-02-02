@@ -10,6 +10,7 @@ interface BulkInvoiceTableProps {
   onItemUpdate: (id: string, updates: Partial<BulkInvoiceItem>) => void;
   onItemRemove: (id: string) => void;
   onSupplierNameChange: (vkn: string, supplierName: string) => void;
+  isOutgoing?: boolean; // Giden fatura için true
 }
 
 export function BulkInvoiceTable({
@@ -17,6 +18,7 @@ export function BulkInvoiceTable({
   onItemUpdate,
   onItemRemove,
   onSupplierNameChange,
+  isOutgoing = false,
 }: BulkInvoiceTableProps) {
   if (items.length === 0) {
     return null;
@@ -84,7 +86,7 @@ export function BulkInvoiceTable({
               PDF
             </th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[180px]">
-              Tedarikçi
+              {isOutgoing ? 'Müşteri' : 'Tedarikçi'}
             </th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
               VKN
