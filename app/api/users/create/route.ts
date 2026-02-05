@@ -40,6 +40,14 @@ export async function POST(request: NextRequest) {
         auth: {
           autoRefreshToken: false,
           persistSession: false
+        },
+        db: {
+          schema: 'public'
+        },
+        global: {
+          headers: {
+            'x-my-custom-header': 'service-role'
+          }
         }
       }
     );
@@ -125,11 +133,22 @@ export async function POST(request: NextRequest) {
     });
 
     if (profileError) {
-      console.error('Profile error:', profileError);
+      console.error('Profile error details:', {
+        error: profileError,
+        code: profileError.code,
+        message: profileError.message,
+        details: profileError.details,
+        hint: profileError.hint,
+      });
       // Rollback: delete auth user
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       return NextResponse.json(
-        { error: 'Kullanıcı profili oluşturulamadı' },
+        { 
+          error: 'Kullanıcı profili oluşturulamadı',
+          details: profileError.message,
+          code: profileError.code,
+          hint: profileError.hint
+        },
         { status: 400 }
       );
     }
