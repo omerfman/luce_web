@@ -26,6 +26,10 @@ interface SupplierSummary {
       count: number;
       totalAmount: number;
     };
+    rejectedInvoices?: {
+      count: number;
+      totalAmount: number;
+    };
   };
   invoices: any[];
   outgoingInvoices: any[];
@@ -250,6 +254,23 @@ export default function SupplierDetailPage() {
               <p className="text-xl md:text-2xl font-bold text-amber-700">
                 {formatCurrency(financial.informalPayments.totalAmount)}
               </p>
+            </div>
+          )}
+
+          {financial.rejectedInvoices && financial.rejectedInvoices.count > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-red-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">❌ Reddedilen</h3>
+                <span className="px-2 py-1 bg-red-600 text-white rounded text-xs font-semibold">
+                  {financial.rejectedInvoices.count}
+                </span>
+              </div>
+              <p className="text-xl md:text-2xl font-bold text-red-700">
+                {formatCurrency(financial.rejectedInvoices.totalAmount)}
+              </p>
+              <div className="text-xs text-gray-600 mt-2">
+                Geçersiz faturalar
+              </div>
             </div>
           )}
 

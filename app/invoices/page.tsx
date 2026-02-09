@@ -19,7 +19,7 @@ import { Invoice, Project, InvoiceQRData } from '@/types';
 import { getOrCreateSupplier } from '@/lib/supabase/suppliers';
 import ExcelJS from 'exceljs';
 
-type TabType = 'pending' | 'assigned' | 'all';
+type TabType = 'pending' | 'assigned' | 'rejected' | 'all';
 
 function InvoicesContent() {
   const router = useRouter();
@@ -32,6 +32,8 @@ function InvoicesContent() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -83,6 +85,7 @@ function InvoicesContent() {
   const canUpdate = hasPermission('invoices', 'update');
   const canDelete = hasPermission('invoices', 'delete');
   const canAssign = hasPermission('invoices', 'assign') || hasPermission('*', '*');
+  const canReject = hasPermission('invoices', 'reject') || hasPermission('invoices', 'update') || hasPermission('*', '*');
 
   async function getSignedUrl(path: string): Promise<string> {
     const { data, error } = await supabase.storage
@@ -104,6 +107,14 @@ function InvoicesContent() {
       setShowFilters(true); // Show filters when coming from project page
     }
   }, [projectFilter]);
+
+  // Set active tab from URL parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['pending', 'assigned', 'rejected', 'all'].includes(tabParam)) {
+      setActiveTab(tabParam as TabType);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (company) {
@@ -711,6 +722,74 @@ function InvoicesContent() {
     }
   }
 
+  function openRejectModal(invoice: Invoice) {
+    setSelectedInvoice(invoice);
+    setRejectionReason('');
+    setIsRejectModalOpen(true);
+  }
+
+  async function handleRejectInvoice(e: React.FormEvent) {
+    e.preventDefault();
+    
+    if (!selectedInvoice || !rejectionReason.trim()) {
+      alert('Lütfen red sebebini giriniz');
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const response = await fetch(`/api/invoices/${selectedInvoice.id}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rejection_reason: rejectionReason.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Fatura reddedilemedi');
+      }
+
+      alert('Fatura başarıyla reddedildi');
+      setIsRejectModalOpen(false);
+      setRejectionReason('');
+      setSelectedInvoice(null);
+      loadInvoices();
+    } catch (error: any) {
+      console.error('Error rejecting invoice:', error);
+      alert(error.message || 'Fatura reddedilirken hata oluştu');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleUndoRejection(invoice: Invoice) {
+    if (!confirm('Bu faturanın reddini geri almak istediğinizden emin misiniz?')) return;
+
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}/reject`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Red geri alınamadı');
+      }
+
+      alert('Faturanın reddi geri alındı');
+      loadInvoices();
+    } catch (error: any) {
+      console.error('Error undoing rejection:', error);
+      alert(error.message || 'Red geri alınırken hata oluştu');
+    }
+  }
+
   async function handleGenerateReport() {
     setIsGeneratingReport(true);
 
@@ -800,19 +879,27 @@ function InvoicesContent() {
         // Proje isimlerini birleştir
         const projectNames = invoice.project_links?.map((link: any) => link.project?.name).filter(Boolean).join(', ') || 'Atanmadı';
         
-        return [
-          index + 1,
-          invoice.invoice_number,
-          formatDate(invoice.invoice_date),
-          invoice.supplier_name || '-',
-          Number(invoice.amount),
-          totalPaid,
-          remaining,
-          withholdingAmount,
-          paymentStatus,
-          projectNames,
-          invoice.description || '-',
-        ];
+        // Açıklama alanını hazırla - Reddedilen faturalar için özel işaretleme
+        let description = invoice.description || '-';
+        if (invoice.is_rejected) {
+          const rejectionText = `❌ REDDEDİLDİ - ${invoice.rejection_reason || 'Sebep belirtilmemiş'}`;
+          description = description === '-' ? rejectionText : `${rejectionText}\n${description}`;
+        }
+        
+        return {
+          sira: index + 1,
+          faturaNo: invoice.invoice_number,
+          tarih: formatDate(invoice.invoice_date),
+          tedarikci: invoice.supplier_name || '-',
+          tutar: Number(invoice.amount),
+          odenen: totalPaid,
+          kalan: remaining,
+          tevkifat: withholdingAmount,
+          odemeDurumu: paymentStatus,
+          projeler: projectNames,
+          aciklama: description,
+          isRejected: invoice.is_rejected || false, // Reddedilme durumu
+        };
       });
 
       if (dataToExport.length === 0) {
@@ -876,17 +963,32 @@ function InvoicesContent() {
       let totalWithholding = 0;
 
       dataToExport.forEach((rowData, index) => {
-        const row = worksheet.addRow(rowData);
+        const row = worksheet.addRow([
+          rowData.sira,
+          rowData.faturaNo,
+          rowData.tarih,
+          rowData.tedarikci,
+          rowData.tutar,
+          rowData.odenen,
+          rowData.kalan,
+          rowData.tevkifat,
+          rowData.odemeDurumu,
+          rowData.projeler,
+          rowData.aciklama,
+        ]);
         
-        // Toplamları hesapla
-        totalAmount += typeof rowData[4] === 'number' ? rowData[4] : 0;
-        totalPaid += typeof rowData[5] === 'number' ? rowData[5] : 0;
-        totalRemaining += typeof rowData[6] === 'number' ? rowData[6] : 0;
-        totalWithholding += typeof rowData[7] === 'number' ? rowData[7] : 0;
+        // Toplamları hesapla - REDDEDİLEN FATURALARI TOPLAMA DAHİL ETME!
+        if (!rowData.isRejected) {
+          totalAmount += typeof rowData.tutar === 'number' ? rowData.tutar : 0;
+          totalPaid += typeof rowData.odenen === 'number' ? rowData.odenen : 0;
+          totalRemaining += typeof rowData.kalan === 'number' ? rowData.kalan : 0;
+          totalWithholding += typeof rowData.tevkifat === 'number' ? rowData.tevkifat : 0;
+        }
         
-        // Zebra striping: Çift satırlar açık gri, tek satırlar beyaz
+        // Reddedilen faturalar için kırmızı arka plan, normal faturalar için zebra striping
+        const isRejected = rowData.isRejected;
         const isEvenRow = (index + 1) % 2 === 0;
-        const bgColor = isEvenRow ? 'FFF2F2F2' : 'FFFFFFFF';
+        const bgColor = isRejected ? 'FFFFCCCC' : (isEvenRow ? 'FFF2F2F2' : 'FFFFFFFF'); // Açık kırmızı reddedilen için
         
         row.eachCell((cell, colNumber) => {
           // Arka plan rengi
@@ -895,6 +997,19 @@ function InvoicesContent() {
             pattern: 'solid',
             fgColor: { argb: bgColor }
           };
+          
+          // Reddedilen faturalar için yazı rengi de kırmızı ve kalın
+          if (isRejected) {
+            cell.font = {
+              size: 10,
+              color: { argb: 'FFCC0000' }, // Koyu kırmızı
+              bold: true
+            };
+          } else {
+            cell.font = {
+              size: 10
+            };
+          }
           
           // Para birimi formatı (Tutar, Ödenen, Kalan, Tevkifat: sütun 5, 6, 7, 8)
           if (colNumber >= 5 && colNumber <= 8) {
@@ -906,21 +1021,27 @@ function InvoicesContent() {
           } else {
             cell.alignment = {
               vertical: 'middle',
-              horizontal: 'left'
+              horizontal: 'left',
+              wrapText: colNumber === 11 // Açıklama sütunu için wrap text
             };
           }
           
-          // İnce gri çerçeveler
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-            left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-            bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-            right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
-          };
-          
-          cell.font = {
-            size: 10
-          };
+          // İnce gri çerçeveler (reddedilen faturalar için daha kalın kırmızı)
+          if (isRejected) {
+            cell.border = {
+              top: { style: 'medium', color: { argb: 'FFCC0000' } },
+              left: { style: 'medium', color: { argb: 'FFCC0000' } },
+              bottom: { style: 'medium', color: { argb: 'FFCC0000' } },
+              right: { style: 'medium', color: { argb: 'FFCC0000' } }
+            };
+          } else {
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
+            };
+          }
         });
       });
 
@@ -1028,10 +1149,12 @@ function InvoicesContent() {
 
   const filteredInvoices = invoices.filter(invoice => {
     const hasProjects = invoice.project_links && invoice.project_links.length > 0;
+    const isRejected = invoice.is_rejected === true;
     
     // Tab filtering
-    if (activeTab === 'pending' && hasProjects) return false;
-    if (activeTab === 'assigned' && !hasProjects) return false;
+    if (activeTab === 'pending' && (hasProjects || isRejected)) return false;
+    if (activeTab === 'assigned' && (!hasProjects || isRejected)) return false;
+    if (activeTab === 'rejected' && !isRejected) return false;
     
     // Advanced filters
     if (filters.startDate && invoice.invoice_date < filters.startDate) return false;
@@ -1093,8 +1216,9 @@ function InvoicesContent() {
     });
   }
 
-  const pendingCount = invoices.filter(inv => !inv.project_links || inv.project_links.length === 0).length;
-  const assignedCount = invoices.filter(inv => inv.project_links && inv.project_links.length > 0).length;
+  const pendingCount = invoices.filter(inv => (!inv.project_links || inv.project_links.length === 0) && !inv.is_rejected).length;
+  const assignedCount = invoices.filter(inv => inv.project_links && inv.project_links.length > 0 && !inv.is_rejected).length;
+  const rejectedCount = invoices.filter(inv => inv.is_rejected === true).length;
 
   // Pagination calculations
   const totalPages = Math.ceil(sortedInvoices.length / itemsPerPage);
@@ -1362,6 +1486,21 @@ function InvoicesContent() {
               </span>
             </button>
             <button
+              onClick={() => setActiveTab('rejected')}
+              className={`whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium ${
+                activeTab === 'rejected'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-secondary-500 hover:border-secondary-300 hover:text-secondary-700'
+              }`}
+            >
+              Reddedilen Faturalar
+              {rejectedCount > 0 && (
+                <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                  {rejectedCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('all')}
               className={`whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium ${
                 activeTab === 'all'
@@ -1403,7 +1542,10 @@ function InvoicesContent() {
                   </tr>
                 ) : (
                   paginatedInvoices.map((invoice) => (
-                    <tr key={invoice.id} className="hover:bg-secondary-50">
+                    <tr 
+                      key={invoice.id} 
+                      className={`hover:bg-secondary-50 ${invoice.is_rejected ? 'bg-red-50' : ''}`}
+                    >
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-secondary-900">
                         {formatDate(invoice.invoice_date)}
                       </td>
@@ -1413,8 +1555,22 @@ function InvoicesContent() {
                       <td className="px-6 py-4 text-sm text-secondary-900">
                         {invoice.supplier_name || '-'}
                       </td>
-                      <td className="px-6 py-4 text-sm text-secondary-600 max-w-xs truncate">
-                        {invoice.description || '-'}
+                      <td className="px-6 py-4 text-sm text-secondary-600 max-w-xs">
+                        {invoice.is_rejected ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 font-medium">
+                              <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                              </svg>
+                              REDDEDİLDİ
+                            </span>
+                            <p className="text-xs text-red-600 truncate" title={invoice.rejection_reason || ''}>
+                              {invoice.rejection_reason}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="truncate">{invoice.description || '-'}</span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-secondary-900">
                         {formatCurrency(invoice.amount)}
@@ -1498,6 +1654,22 @@ function InvoicesContent() {
                             className="text-primary-600 hover:text-primary-700"
                           >
                             Proje
+                          </button>
+                        )}
+                        {canReject && !invoice.is_rejected && (
+                          <button
+                            onClick={() => openRejectModal(invoice)}
+                            className="text-orange-600 hover:text-orange-700"
+                          >
+                            Reddet
+                          </button>
+                        )}
+                        {canReject && invoice.is_rejected && (
+                          <button
+                            onClick={() => handleUndoRejection(invoice)}
+                            className="text-purple-600 hover:text-purple-700"
+                          >
+                            Geri Al
                           </button>
                         )}
                         {canDelete && (
@@ -1806,6 +1978,68 @@ function InvoicesContent() {
             </Button>
           </ModalFooter>
         </div>
+      </Modal>
+
+      {/* Reject Invoice Modal */}
+      <Modal 
+        isOpen={isRejectModalOpen} 
+        onClose={() => {
+          setIsRejectModalOpen(false);
+          setRejectionReason('');
+        }} 
+        title="Faturayı Reddet"
+        size="md"
+      >
+        <form onSubmit={handleRejectInvoice} className="space-y-4">
+          <div className="rounded-lg bg-orange-50 border border-orange-200 p-4">
+            <p className="text-sm text-orange-800">
+              <span className="font-medium">Fatura:</span> {selectedInvoice?.invoice_number}
+            </p>
+            <p className="text-sm text-orange-800 mt-1">
+              <span className="font-medium">Tutar:</span> {selectedInvoice && formatCurrency(selectedInvoice.amount)}
+            </p>
+            <p className="text-sm text-orange-800 mt-1">
+              <span className="font-medium">Tedarikçi:</span> {selectedInvoice?.supplier_name || '-'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">
+              Red Sebebi <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Faturanın neden reddedildiğini açıklayın (örn: Yanlış hizmet, Hatalı tutar, vb.)"
+              rows={4}
+              required
+              className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="text-xs text-secondary-500 mt-1">
+              Reddedilen faturalar geçersiz sayılır ve hiçbir hesaba dahil edilmez.
+            </p>
+          </div>
+
+          <ModalFooter>
+            <Button 
+              type="button" 
+              variant="ghost" 
+              onClick={() => {
+                setIsRejectModalOpen(false);
+                setRejectionReason('');
+              }}
+            >
+              İptal
+            </Button>
+            <Button 
+              type="submit" 
+              isLoading={isUploading}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              Faturayı Reddet
+            </Button>
+          </ModalFooter>
+        </form>
       </Modal>
 
       {/* Payment Modal */}

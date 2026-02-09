@@ -44,7 +44,7 @@ export async function GET(
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    // Get invoices linked to this project with their totals
+    // Get invoices linked to this project with their totals (exclude rejected)
     const { data: invoiceLinks, error: invoicesError } = await supabase
       .from('invoice_project_links')
       .select(`
@@ -57,7 +57,8 @@ export async function GET(
           withholding_amount,
           goods_services_total,
           supplier_name,
-          supplier_vkn
+          supplier_vkn,
+          is_rejected
         )
       `)
       .eq('project_id', projectId);
@@ -66,14 +67,22 @@ export async function GET(
       console.error('Error fetching invoices:', invoicesError);
     }
 
-    // Calculate invoice totals
-    const invoices = invoiceLinks?.map((link: any) => link.invoice).filter(Boolean) || [];
+    // Filter out rejected invoices and calculate totals
+    const allInvoices = invoiceLinks?.map((link: any) => link.invoice).filter(Boolean) || [];
+    const invoices = allInvoices.filter((inv: any) => !inv.is_rejected);
+    const rejectedInvoices = allInvoices.filter((inv: any) => inv.is_rejected);
+    
     const invoiceStats = {
       count: invoices.length,
       totalAmount: invoices.reduce((sum: number, inv: any) => sum + (inv.amount || 0), 0),
       totalVAT: invoices.reduce((sum: number, inv: any) => sum + (inv.vat_amount || 0), 0),
       totalWithholding: invoices.reduce((sum: number, inv: any) => sum + (inv.withholding_amount || 0), 0),
       totalGoodsServices: invoices.reduce((sum: number, inv: any) => sum + (inv.goods_services_total || 0), 0),
+    };
+
+    const rejectedInvoiceStats = {
+      count: rejectedInvoices.length,
+      totalAmount: rejectedInvoices.reduce((sum: number, inv: any) => sum + (inv.amount || 0), 0),
     };
 
     // Get outgoing invoices linked to this project (invoices we sent to customers)
@@ -337,6 +346,7 @@ export async function GET(
         invoices: invoiceStats,
         outgoingInvoices: outgoingInvoiceStats,
         informalPayments: informalPaymentStats,
+        rejectedInvoices: rejectedInvoiceStats,
       },
       files: fileStats,
       activities: activities || [],

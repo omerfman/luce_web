@@ -149,6 +149,11 @@ export interface Invoice {
   invoice_type?: string | null;           // Fatura tipi (SATIS, ALIS)
   invoice_ettn?: string | null;           // E-Fatura ETTN (UUID)
   currency?: string | null;               // Para birimi (TRY, USD, EUR)
+  // Rejection info
+  is_rejected?: boolean;                  // Fatura reddedildi mi?
+  rejection_reason?: string | null;       // Red sebebi
+  rejected_by?: string | null;            // Reddeden kullanıcı ID
+  rejected_at?: string | null;            // Reddedilme zamanı
   // Relations
   company?: Company;
   project_links?: InvoiceProjectLink[];
@@ -211,7 +216,7 @@ export enum UserRole {
 
 // ==================== PERMISSION TYPES ====================
 
-export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'assign' | 'export' | '*';
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'assign' | 'export' | 'reject' | '*';
 export type PermissionResource =
   | 'invoices'
   | 'projects'
@@ -494,6 +499,10 @@ export interface ProjectSummary {
       count: number;
       totalAmount: number;
     };
+    rejectedInvoices: {
+      count: number;
+      totalAmount: number;
+    };
   };
   files: ProjectFileStats;
   activities: ProjectActivityLog[];
@@ -540,6 +549,7 @@ export interface DashboardStats {
   grandTotal: number;
   thisMonthTotal: number;
   pendingInvoices: number;
+  rejectedInvoices: number;
 }
 
 export interface DashboardRecentActivities {

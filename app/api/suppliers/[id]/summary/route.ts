@@ -128,16 +128,26 @@ export async function GET(
       console.log('First invoice keys:', Object.keys(invoices[0]));
     }
 
-    // Calculate invoice financials
+    // Calculate invoice financials (exclude rejected invoices)
     // Database uses: amount (total), goods_services_total, vat_amount, withholding_amount
+    const allInvoices = invoices || [];
+    const validInvoices = allInvoices.filter((inv: any) => !inv.is_rejected);
+    const rejectedInvoices = allInvoices.filter((inv: any) => inv.is_rejected);
+    
     const invoiceStats = {
-      count: invoices?.length || 0,
-      totalAmount: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0) || 0,
-      totalTax: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.vat_amount) || 0), 0) || 0,
-      totalWithholding: invoices?.reduce((sum: number, inv: any) => sum + (parseFloat(inv.withholding_amount) || 0), 0) || 0,
+      count: validInvoices.length,
+      totalAmount: validInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0),
+      totalTax: validInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.vat_amount) || 0), 0),
+      totalWithholding: validInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.withholding_amount) || 0), 0),
+    };
+    
+    const rejectedInvoiceStats = {
+      count: rejectedInvoices.length,
+      totalAmount: rejectedInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.amount) || 0), 0),
     };
     
     console.log('Invoice stats:', invoiceStats);
+    console.log('Rejected invoice stats:', rejectedInvoiceStats);
 
     // Get outgoing invoices (where this company is the customer - we are selling to them)
     let outgoingInvoices: any[] = [];
@@ -250,11 +260,11 @@ export async function GET(
       console.log('Projects found:', projects.length);
     }
 
-    // Monthly transaction data (incoming = expense, outgoing = income)
+    // Monthly transaction data (incoming = expense, outgoing = income, excluding rejected)
     const monthlyData = new Map<string, { incomingInvoices: number; outgoingInvoices: number; informalPayments: number }>();
 
-    // Incoming invoices (expenses - we pay them)
-    invoices?.forEach((inv: any) => {
+    // Incoming invoices (expenses - we pay them, exclude rejected)
+    validInvoices.forEach((inv: any) => {
       const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
       const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
       current.incomingInvoices += parseFloat(inv.amount) || 0;
@@ -296,6 +306,7 @@ export async function GET(
         invoices: invoiceStats,
         outgoingInvoices: outgoingInvoiceStats,
         informalPayments: informalPaymentStats,
+        rejectedInvoices: rejectedInvoiceStats,
       },
       invoices: invoices || [],
       outgoingInvoices: outgoingInvoices || [],

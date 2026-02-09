@@ -45,6 +45,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { resource: 'invoices', action: 'update', scope: 'company' },
       { resource: 'invoices', action: 'delete', scope: 'company' },
       { resource: 'invoices', action: 'assign', scope: 'company' },
+      { resource: 'invoices', action: 'reject', scope: 'company' },
       { resource: 'invoices', action: 'export', scope: 'company' },
     ],
   },
@@ -165,6 +166,7 @@ export const ACTION_LABELS: Record<string, string> = {
   delete: 'Silme',
   manage: 'Tam Yönetim',
   assign: 'Atama',
+  reject: 'Reddetme',
   export: 'Dışa Aktarma',
 };
 
@@ -178,6 +180,7 @@ export const ACTION_DESCRIPTIONS: Record<string, string> = {
   delete: 'Kayıtları silebilir',
   manage: 'Tüm işlemleri yapabilir (oluşturma, güncelleme, silme)',
   assign: 'Kayıtları projelere veya kullanıcılara atayabilir',
+  reject: 'Hatalı faturları reddedebilir ve reddi geri alabilir',
   export: 'Verileri dışa aktarabilir',
 };
 

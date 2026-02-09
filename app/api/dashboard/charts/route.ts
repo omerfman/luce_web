@@ -35,11 +35,12 @@ export async function GET() {
       topProjects,
       topSuppliers,
     ] = await Promise.all([
-      // Monthly Invoices (last 6 months)
+      // Monthly Invoices (last 6 months, exclude rejected)
       supabase
         .from('invoices')
         .select('invoice_date, amount')
         .eq('company_id', companyId)
+        .eq('is_rejected', false)
         .gte('invoice_date', sixMonthsAgoStr)
         .order('invoice_date', { ascending: true }),
       
@@ -58,14 +59,14 @@ export async function GET() {
       }).then(async (result) => {
         // If RPC doesn't exist, calculate manually
         if (result.error) {
-          // Get all projects with their financial data
+          // Get all projects with their financial data (exclude rejected invoices)
           const { data: projects } = await supabase
             .from('projects')
             .select(`
               id,
               name,
               invoice_links:invoice_project_links(
-                invoice:invoices(amount)
+                invoice:invoices(amount, is_rejected)
               ),
               payments:informal_payments(amount)
             `)
@@ -73,10 +74,14 @@ export async function GET() {
 
           if (!projects) return { data: [] };
 
-          // Calculate total for each project
+          // Calculate total for each project (exclude rejected invoices)
           const projectTotals = projects.map(project => {
-            const invoiceTotal = project.invoice_links?.reduce((sum: number, link: any) => 
-              sum + (parseFloat(link.invoice?.amount) || 0), 0) || 0;
+            const invoiceTotal = project.invoice_links?.reduce((sum: number, link: any) => {
+              if (!link.invoice?.is_rejected) {
+                return sum + (parseFloat(link.invoice?.amount) || 0);
+              }
+              return sum;
+            }, 0) || 0;
             const paymentTotal = project.payments?.reduce((sum: number, pay: any) => 
               sum + (parseFloat(pay.amount) || 0), 0) || 0;
             
@@ -97,14 +102,14 @@ export async function GET() {
         return result;
       }),
       
-      // Top 5 Suppliers by transaction count and amount
+      // Top 5 Suppliers by transaction count and amount (exclude rejected invoices)
       supabase
         .from('suppliers')
         .select(`
           id,
           name,
           vkn,
-          invoices:invoices(amount),
+          invoices:invoices(amount, is_rejected),
           payments:informal_payments(amount)
         `)
         .eq('company_id', companyId)
@@ -146,10 +151,15 @@ export async function GET() {
         total: Math.round(item.invoices + item.payments),
       }));
 
-    // Process top suppliers
+    // Process top suppliers (exclude rejected invoices)
     const suppliersWithTotals = (topSuppliers.data || []).map((supplier: any) => {
-      const invoiceTotal = supplier.invoices?.reduce((sum: number, inv: any) => 
-        sum + (parseFloat(inv.amount) || 0), 0) || 0;
+      const invoiceTotal = supplier.invoices?.reduce((sum: number, inv: any) => {
+        if (!inv.is_rejected) {
+          return sum + (parseFloat(inv.amount) || 0);
+        }
+        return sum;
+      }, 0) || 0;
+      const validInvoiceCount = supplier.invoices?.filter((inv: any) => !inv.is_rejected).length || 0;
       const paymentTotal = supplier.payments?.reduce((sum: number, pay: any) => 
         sum + (parseFloat(pay.amount) || 0), 0) || 0;
       
@@ -158,7 +168,7 @@ export async function GET() {
         name: supplier.name,
         vkn: supplier.vkn,
         total: invoiceTotal + paymentTotal,
-        transactionCount: (supplier.invoices?.length || 0) + (supplier.payments?.length || 0),
+        transactionCount: validInvoiceCount + (supplier.payments?.length || 0),
       };
     });
 

@@ -237,6 +237,29 @@ export default function ProjectSummaryPage() {
             </div>
           </div>
 
+          {/* Rejected Invoices Card */}
+          {financial.rejectedInvoices && financial.rejectedInvoices.count > 0 && (
+            <div className="bg-white rounded-lg shadow border border-red-200 p-5 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-gray-900">
+                  ❌ Reddedilen Faturalar
+                </h2>
+                <span className="px-2.5 py-1 bg-red-100 text-red-700 rounded-lg text-sm font-semibold">
+                  {financial.rejectedInvoices.count}
+                </span>
+              </div>
+              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                <p className="text-xs font-semibold text-gray-600 mb-1">Toplam (Geçersiz)</p>
+                <p className="text-xl font-bold text-red-600 break-words">
+                  {formatCurrency(financial.rejectedInvoices.totalAmount)}
+                </p>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Bu faturalar geçersiz sayılır ve hesaplamalara dahil edilmez.
+              </p>
+            </div>
+          )}
+
           {/* Net Balance Card */}
           <div className="bg-white border-2 border-purple-600 rounded-lg shadow-lg p-5 sm:p-6">
             <div className="mb-3">

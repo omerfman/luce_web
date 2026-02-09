@@ -39,11 +39,12 @@ export async function GET() {
         .select('id, status', { count: 'exact' })
         .eq('company_id', companyId),
       
-      // 2. Invoice Statistics
+      // 2. Invoice Statistics (exclude rejected invoices)
       supabase
         .from('invoices')
-        .select('amount, vat_amount, withholding_amount, invoice_date', { count: 'exact' })
-        .eq('company_id', companyId),
+        .select('amount, vat_amount, withholding_amount, invoice_date, is_rejected', { count: 'exact' })
+        .eq('company_id', companyId)
+        .eq('is_rejected', false),
       
       // 3. Informal Payments Statistics
       supabase
@@ -57,11 +58,12 @@ export async function GET() {
         .select('id, supplier_type', { count: 'exact' })
         .eq('company_id', companyId),
       
-      // 5. This Month's Invoices
+      // 5. This Month's Invoices (exclude rejected)
       supabase
         .from('invoices')
         .select('amount')
         .eq('company_id', companyId)
+        .eq('is_rejected', false)
         .gte('invoice_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
         .lte('invoice_date', new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]),
       
@@ -119,12 +121,20 @@ export async function GET() {
     // Calculate Grand Total
     const grandTotal = invoiceStats.totalAmount + paymentStats.totalAmount;
 
-    // Count pending invoices (not assigned to any project)
+    // Count pending invoices (not assigned to any project and not rejected)
     const { count: pendingInvoicesCount } = await supabase
       .from('invoices')
       .select('id', { count: 'exact', head: true })
       .eq('company_id', companyId)
+      .eq('is_rejected', false)
       .not('id', 'in', `(SELECT invoice_id FROM invoice_project_links WHERE invoice_id IS NOT NULL)`);
+
+    // Count rejected invoices
+    const { count: rejectedInvoicesCount } = await supabase
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('is_rejected', true);
 
     return NextResponse.json({
       projects: projectStats,
@@ -134,6 +144,7 @@ export async function GET() {
       grandTotal,
       thisMonthTotal,
       pendingInvoices: pendingInvoicesCount || 0,
+      rejectedInvoices: rejectedInvoicesCount || 0,
     });
 
   } catch (error) {

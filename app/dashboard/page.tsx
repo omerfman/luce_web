@@ -192,7 +192,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Main Stats Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
           <StatCard
             title="Toplam Projeler"
             value={stats?.projects.total || 0}
@@ -209,6 +209,15 @@ export default function DashboardPage() {
             icon="⏳"
             color="yellow"
             onClick={() => router.push('/invoices')}
+          />
+          
+          <StatCard
+            title="Reddedilen Faturalar"
+            value={stats?.rejectedInvoices || 0}
+            subtitle="Geçersiz faturalar"
+            icon="❌"
+            color="red"
+            onClick={() => router.push('/invoices?tab=rejected')}
           />
           
           <StatCard
