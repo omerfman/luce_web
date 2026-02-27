@@ -10,6 +10,8 @@ export default function ProjectSummaryPage() {
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pettyCashReceipts, setPettyCashReceipts] = useState<any[]>([]);
+  const [pettyCashTotal, setPettyCashTotal] = useState<number>(0);
 
   useEffect(() => {
     const loadProjectSummary = async () => {
@@ -32,8 +34,28 @@ export default function ProjectSummaryPage() {
 
     if (params.id) {
       loadProjectSummary();
+      loadPettyCash();
     }
   }, [params.id]);
+  
+  const loadPettyCash = async () => {
+    try {
+      const response = await fetch(`/api/petty-cash?project_id=${params.id}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Petty cash API error:', errorData);
+        throw new Error(errorData.details || errorData.error || 'Failed to load petty cash');
+      }
+
+      const data = await response.json();
+      setPettyCashReceipts(data.items || []);
+      setPettyCashTotal(parseFloat(data.stats?.totalExpense || '0'));
+    } catch (error: any) {
+      console.error('Error loading petty cash:', error);
+      console.error('Error message:', error.message);
+    }
+  };
 
   if (loading) {
     return (
@@ -235,6 +257,32 @@ export default function ProjectSummaryPage() {
                 {formatCurrency(financial.informalPayments.totalAmount)}
               </p>
             </div>
+          </div>
+          
+          {/* Petty Cash Receipts Card */}
+          <div className="bg-white rounded-lg shadow border border-purple-200 p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-gray-900">
+                💼 Kasa Fişleri
+              </h2>
+              <span className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded-lg text-sm font-semibold">
+                {pettyCashReceipts.length}
+              </span>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+              <p className="text-xs font-semibold text-gray-600 mb-1">Toplam</p>
+              <p className="text-xl font-bold text-purple-600 break-words">
+                {formatCurrency(pettyCashTotal)}
+              </p>
+            </div>
+            {pettyCashReceipts.length > 0 && (
+              <button
+                onClick={() => router.push(`/petty-cash?project_id=${params.id}`)}
+                className="mt-3 w-full px-3 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-medium text-purple-700 transition-colors"
+              >
+                Tümünü Görüntüle →
+              </button>
+            )}
           </div>
 
           {/* Rejected Invoices Card */}

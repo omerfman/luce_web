@@ -912,13 +912,13 @@ function InvoicesContent() {
       const worksheet = workbook.addWorksheet('Faturalar');
 
       // Sütun başlıkları
-      const headers = ['Sıra', 'Fatura No', 'Tarih', 'Tedarikçi', 'Tutar', 'Ödenen', 'Kalan', 'Tevkifat', 'Ödeme Durumu', 'Projeler', 'Açıklama'];
+      const headers = ['Sıra', 'Tarih', 'Fatura No', 'Tedarikçi', 'Tutar', 'Ödenen', 'Kalan', 'Tevkifat', 'Ödeme Durumu', 'Projeler', 'Açıklama'];
       
       // Sütun genişlikleri
       worksheet.columns = [
         { key: 'sira', width: 8 },
-        { key: 'faturaNo', width: 17 },
         { key: 'tarih', width: 13 },
+        { key: 'faturaNo', width: 17 },
         { key: 'tedarikci', width: 27 },
         { key: 'tutar', width: 16 },
         { key: 'odenen', width: 16 },
@@ -965,8 +965,8 @@ function InvoicesContent() {
       dataToExport.forEach((rowData, index) => {
         const row = worksheet.addRow([
           rowData.sira,
-          rowData.faturaNo,
           rowData.tarih,
+          rowData.faturaNo,
           rowData.tedarikci,
           rowData.tutar,
           rowData.odenen,

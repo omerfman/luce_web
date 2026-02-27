@@ -2,6 +2,7 @@ import { Permission } from '@/types';
 
 /**
  * Check if user has a specific permission
+ * Super admin (companies.manage.all) otomatik olarak tüm yetkilere sahiptir
  */
 export function checkPermission(
   userPermissions: Permission[],
@@ -10,6 +11,11 @@ export function checkPermission(
   scope: string = 'company'
 ): boolean {
   if (!userPermissions || userPermissions.length === 0) return false;
+
+  // Super admin check - tüm yetkilere sahip
+  if (isSuperAdmin(userPermissions)) {
+    return true;
+  }
 
   return userPermissions.some((perm) => {
     const resourceMatch = perm.resource === resource;
@@ -34,10 +40,15 @@ export function getAccessibleResources(
 
 /**
  * Check if user is superadmin
+ * Accepts either companies.manage.all OR wildcard *.*.all
  */
 export function isSuperAdmin(userPermissions: Permission[]): boolean {
   return userPermissions.some(
-    (perm) => perm.resource === 'companies' && perm.action === 'manage' && perm.scope === 'all'
+    (perm) => 
+      // companies.manage.all (traditional super admin)
+      (perm.resource === 'companies' && perm.action === 'manage' && perm.scope === 'all') ||
+      // *.*.all (wildcard super admin)
+      (perm.resource === '*' && perm.action === '*' && perm.scope === 'all')
   );
 }
 
@@ -89,6 +100,7 @@ export function getPermissionDescription(permission: Permission): string {
     subcontractors: 'Taşeronlar',
     suppliers: 'Tedarikçiler',
     activity_logs: 'Aktivite Logları',
+    card_statements: 'Kredi Kartı Ekstreleri',
   };
 
   const actionNames: Record<string, string> = {
@@ -99,6 +111,7 @@ export function getPermissionDescription(permission: Permission): string {
     manage: 'Tam Yönetim',
     assign: 'Atama',
     export: 'Dışa Aktarma',
+    verify: 'Onaylama',
   };
 
   const scopeNames: Record<string, string> = {

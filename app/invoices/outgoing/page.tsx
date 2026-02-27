@@ -299,9 +299,11 @@ function OutgoingInvoicesContent() {
 
     // Müşteri adını VKN'den getir
     if (qrData.buyerVKN && company) {
-      getOrCreateCustomer(qrData.buyerVKN, qrData.buyerName || 'Bilinmeyen Müşteri', company.id)
+      // Eğer QR'da alıcı adı varsa, müşteriyi bu adla getir/oluştur
+      const customerName = qrData.buyerName || `VKN: ${qrData.buyerVKN}`;
+      getOrCreateCustomer(qrData.buyerVKN, customerName, company.id)
         .then(customer => {
-          if (customer && customer.name && customer.name !== 'Bilinmeyen Müşteri') {
+          if (customer && customer.name) {
             setFormData(prev => ({
               ...prev,
               customer_name: customer.name
@@ -345,6 +347,11 @@ function OutgoingInvoicesContent() {
 
     if (!/^\d{10,11}$/.test(formData.customer_vkn.trim())) {
       alert('⚠️ VKN 10 veya 11 haneli rakam olmalıdır!');
+      return;
+    }
+
+    if (!formData.customer_name || !formData.customer_name.trim()) {
+      alert('⚠️ Müşteri adı zorunludur!');
       return;
     }
 
@@ -595,8 +602,8 @@ function OutgoingInvoicesContent() {
 
         return [
           index + 1,
-          invoice.invoice_number,
           formatDate(invoice.invoice_date),
+          invoice.invoice_number,
           invoice.customer_name || '-',
           Number(invoice.amount),
           withholdingAmount,
@@ -613,12 +620,12 @@ function OutgoingInvoicesContent() {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Giden Faturalar');
 
-      const headers = ['Sıra', 'Fatura No', 'Tarih', 'Müşteri', 'Tutar', 'Tevkifat', 'Projeler', 'Açıklama'];
+      const headers = ['Sıra', 'Tarih', 'Fatura No', 'Müşteri', 'Tutar', 'Tevkifat', 'Projeler', 'Açıklama'];
 
       worksheet.columns = [
         { key: 'sira', width: 8 },
-        { key: 'faturaNo', width: 17 },
         { key: 'tarih', width: 13 },
+        { key: 'faturaNo', width: 17 },
         { key: 'musteri', width: 27 },
         { key: 'tutar', width: 16 },
         { key: 'tevkifat', width: 16 },

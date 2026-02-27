@@ -216,7 +216,7 @@ export enum UserRole {
 
 // ==================== PERMISSION TYPES ====================
 
-export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'assign' | 'export' | 'reject' | '*';
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'assign' | 'export' | 'reject' | 'verify' | '*';
 export type PermissionResource =
   | 'invoices'
   | 'projects'
@@ -228,6 +228,7 @@ export type PermissionResource =
   | 'subcontractors'
   | 'suppliers'
   | 'activity_logs'
+  | 'card_statements'
   | '*';
 export type PermissionScope = 'own' | 'company' | 'all';
 

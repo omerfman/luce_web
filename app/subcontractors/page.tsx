@@ -67,6 +67,10 @@ export default function SubcontractorsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
   
+  // Filtreleme ve sıralama state'leri
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOption, setSortOption] = useState('name-asc'); // alfabetik (a-z) varsayılan
+  
   // Inline editing state
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<{ name: string; vkn: string; phone?: string; email?: string; }>({ name: '', vkn: '', phone: '', email: '' });
@@ -75,6 +79,54 @@ export default function SubcontractorsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'subcontractor' | 'invoice_company'>('subcontractor');
   const [formData, setFormData] = useState({ name: '', vkn: '' });
+
+  // Filtreleme ve sıralama fonksiyonları
+  const filterAndSortSuppliers = (suppliers: Supplier[]) => {
+    let filtered = [...suppliers];
+    
+    // Arama filtresi
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.name.toLowerCase().includes(search) ||
+        s.vkn?.toLowerCase().includes(search) ||
+        s.phone?.toLowerCase().includes(search) ||
+        s.email?.toLowerCase().includes(search)
+      );
+    }
+    
+    // Sıralama
+    switch (sortOption) {
+      case 'name-asc':
+        filtered.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+        break;
+      case 'name-desc':
+        filtered.sort((a, b) => b.name.localeCompare(a.name, 'tr'));
+        break;
+      case 'vkn-asc':
+        filtered.sort((a, b) => (a.vkn || '').localeCompare(b.vkn || '', 'tr'));
+        break;
+      case 'vkn-desc':
+        filtered.sort((a, b) => (b.vkn || '').localeCompare(a.vkn || '', 'tr'));
+        break;
+      case 'date-newest':
+        filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        break;
+      case 'date-oldest':
+        filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        break;
+    }
+    
+    return filtered;
+  };
+
+  // Tab değiştiğinde arama ve sıralamayı sıfırla
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setSearchTerm('');
+    setSortOption('name-asc');
+    setSelectedSuppliers([]);
+  };
 
   // İlk yükleme
   useEffect(() => {
@@ -366,6 +418,8 @@ export default function SubcontractorsPage() {
 
   // Atama Bekleyenler Tab
   const renderPendingTab = () => {
+    const filteredSuppliers = filterAndSortSuppliers(pendingSuppliers);
+    
     if (pendingSuppliers.length === 0) {
       return (
         <div className="card py-12 text-center">
@@ -380,8 +434,62 @@ export default function SubcontractorsPage() {
 
     return (
       <div className="space-y-4">
+        {/* Arama ve Sıralama */}
+        <div className="card">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label htmlFor="search" className="block text-sm font-medium text-secondary-700 mb-1">
+                Ara
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Firma adı, VKN, telefon veya e-posta ile ara..."
+                  className="w-full rounded-md border border-secondary-300 pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <svg className="absolute left-3 top-2.5 h-5 w-5 text-secondary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="w-full sm:w-64">
+              <label htmlFor="sort" className="block text-sm font-medium text-secondary-700 mb-1">
+                Sırala
+              </label>
+              <select
+                id="sort"
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value)}
+                className="w-full rounded-md border border-secondary-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="name-asc">İsim (A-Z)</option>
+                <option value="name-desc">İsim (Z-A)</option>
+                <option value="vkn-asc">VKN (Artan)</option>
+                <option value="vkn-desc">VKN (Azalan)</option>
+                <option value="date-newest">En Yeni</option>
+                <option value="date-oldest">En Eski</option>
+              </select>
+            </div>
+          </div>
+          {filteredSuppliers.length !== pendingSuppliers.length && (
+            <div className="mt-3 text-sm text-secondary-600">
+              {pendingSuppliers.length} firmadan {filteredSuppliers.length} tanesi gösteriliyor
+            </div>
+          )}
+        </div>
+
+        {/* Sonuç bulunamadı mesajı */}
+        {filteredSuppliers.length === 0 && searchTerm && (
+          <div className="card py-8 text-center">
+            <p className="text-secondary-600">Arama kriterlerine uygun firma bulunamadı.</p>
+          </div>
+        )}
+        
         {/* Toplu işlem butonları */}
-        {selectedSuppliers.length > 0 && (
+        {selectedSuppliers.length > 0 && filteredSuppliers.length > 0 && (
           <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
             <span className="text-sm font-medium text-amber-800">
               {selectedSuppliers.length} firma seçildi
@@ -405,6 +513,7 @@ export default function SubcontractorsPage() {
           </div>
         )}
 
+        {filteredSuppliers.length > 0 && (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-secondary-200">
@@ -413,12 +522,12 @@ export default function SubcontractorsPage() {
                   <th className="table-header w-12">
                     <input
                       type="checkbox"
-                      checked={selectedSuppliers.length === pendingSuppliers.length && pendingSuppliers.length > 0}
+                      checked={selectedSuppliers.length === filteredSuppliers.length && filteredSuppliers.length > 0}
                       onChange={() => {
-                        if (selectedSuppliers.length === pendingSuppliers.length) {
+                        if (selectedSuppliers.length === filteredSuppliers.length) {
                           setSelectedSuppliers([]);
                         } else {
-                          setSelectedSuppliers(pendingSuppliers.map(s => s.id));
+                          setSelectedSuppliers(filteredSuppliers.map(s => s.id));
                         }
                       }}
                       className="rounded border-secondary-300"
@@ -432,7 +541,7 @@ export default function SubcontractorsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-secondary-200 bg-white">
-                {pendingSuppliers.map((supplier) => (
+                {filteredSuppliers.map((supplier) => (
                   <tr key={supplier.id} className="hover:bg-secondary-50">
                     <td className="table-cell">
                       <input
@@ -582,12 +691,15 @@ export default function SubcontractorsPage() {
             </table>
           </div>
         </div>
+        )}
       </div>
     );
   };
 
   // Taşeron Listesi Tab
   const renderSubcontractorsTab = () => {
+    const filteredSuppliers = filterAndSortSuppliers(subcontractorSuppliers);
+    
     if (subcontractorSuppliers.length === 0) {
       return (
         <div className="card py-12 text-center">
@@ -602,7 +714,61 @@ export default function SubcontractorsPage() {
 
     return (
       <div className="space-y-4">
-        {selectedSuppliers.length > 0 && (
+        {/* Arama ve Sıralama */}
+        <div className="card">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label htmlFor="search" className="block text-sm font-medium text-secondary-700 mb-1">
+                Ara
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Firma adı, VKN, telefon veya e-posta ile ara..."
+                  className="w-full rounded-md border border-secondary-300 pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <svg className="absolute left-3 top-2.5 h-5 w-5 text-secondary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="w-full sm:w-64">
+              <label htmlFor="sort" className="block text-sm font-medium text-secondary-700 mb-1">
+                Sırala
+              </label>
+              <select
+                id="sort"
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value)}
+                className="w-full rounded-md border border-secondary-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="name-asc">İsim (A-Z)</option>
+                <option value="name-desc">İsim (Z-A)</option>
+                <option value="vkn-asc">VKN (Artan)</option>
+                <option value="vkn-desc">VKN (Azalan)</option>
+                <option value="date-newest">En Yeni</option>
+                <option value="date-oldest">En Eski</option>
+              </select>
+            </div>
+          </div>
+          {filteredSuppliers.length !== subcontractorSuppliers.length && (
+            <div className="mt-3 text-sm text-secondary-600">
+              {subcontractorSuppliers.length} firmadan {filteredSuppliers.length} tanesi gösteriliyor
+            </div>
+          )}
+        </div>
+
+        {/* Sonuç bulunamadı mesajı */}
+        {filteredSuppliers.length === 0 && searchTerm && (
+          <div className="card py-8 text-center">
+            <p className="text-secondary-600">Arama kriterlerine uygun taşeron bulunamadı.</p>
+          </div>
+        )}
+        
+        {selectedSuppliers.length > 0 && filteredSuppliers.length > 0 && (
           <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
             <span className="text-sm font-medium text-amber-800">
               {selectedSuppliers.length} firma seçildi
@@ -616,6 +782,7 @@ export default function SubcontractorsPage() {
           </div>
         )}
 
+        {filteredSuppliers.length > 0 && (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-secondary-200">
@@ -624,12 +791,12 @@ export default function SubcontractorsPage() {
                   <th className="table-header w-12">
                     <input
                       type="checkbox"
-                      checked={selectedSuppliers.length === subcontractorSuppliers.length}
+                      checked={selectedSuppliers.length === filteredSuppliers.length}
                       onChange={() => {
-                        if (selectedSuppliers.length === subcontractorSuppliers.length) {
+                        if (selectedSuppliers.length === filteredSuppliers.length) {
                           setSelectedSuppliers([]);
                         } else {
-                          setSelectedSuppliers(subcontractorSuppliers.map(s => s.id));
+                          setSelectedSuppliers(filteredSuppliers.map(s => s.id));
                         }
                       }}
                       className="rounded border-secondary-300"
@@ -643,7 +810,7 @@ export default function SubcontractorsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-secondary-200 bg-white">
-                {subcontractorSuppliers.map((supplier) => (
+                {filteredSuppliers.map((supplier) => (
                   <tr key={supplier.id} className="hover:bg-secondary-50">
                     <td className="table-cell">
                       <input
@@ -790,12 +957,15 @@ export default function SubcontractorsPage() {
             </table>
           </div>
         </div>
+        )}
       </div>
     );
   };
 
   // Fatura Firmaları Tab
   const renderInvoiceCompaniesTab = () => {
+    const filteredSuppliers = filterAndSortSuppliers(invoiceCompanySuppliers);
+    
     if (invoiceCompanySuppliers.length === 0) {
       return (
         <div className="card py-12 text-center">
@@ -810,7 +980,61 @@ export default function SubcontractorsPage() {
 
     return (
       <div className="space-y-4">
-        {selectedSuppliers.length > 0 && (
+        {/* Arama ve Sıralama */}
+        <div className="card">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label htmlFor="search" className="block text-sm font-medium text-secondary-700 mb-1">
+                Ara
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Firma adı, VKN, telefon veya e-posta ile ara..."
+                  className="w-full rounded-md border border-secondary-300 pl-10 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <svg className="absolute left-3 top-2.5 h-5 w-5 text-secondary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="w-full sm:w-64">
+              <label htmlFor="sort" className="block text-sm font-medium text-secondary-700 mb-1">
+                Sırala
+              </label>
+              <select
+                id="sort"
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value)}
+                className="w-full rounded-md border border-secondary-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="name-asc">İsim (A-Z)</option>
+                <option value="name-desc">İsim (Z-A)</option>
+                <option value="vkn-asc">VKN (Artan)</option>
+                <option value="vkn-desc">VKN (Azalan)</option>
+                <option value="date-newest">En Yeni</option>
+                <option value="date-oldest">En Eski</option>
+              </select>
+            </div>
+          </div>
+          {filteredSuppliers.length !== invoiceCompanySuppliers.length && (
+            <div className="mt-3 text-sm text-secondary-600">
+              {invoiceCompanySuppliers.length} firmadan {filteredSuppliers.length} tanesi gösteriliyor
+            </div>
+          )}
+        </div>
+
+        {/* Sonuç bulunamadı mesajı */}
+        {filteredSuppliers.length === 0 && searchTerm && (
+          <div className="card py-8 text-center">
+            <p className="text-secondary-600">Arama kriterlerine uygun fatura firması bulunamadı.</p>
+          </div>
+        )}
+        
+        {selectedSuppliers.length > 0 && filteredSuppliers.length > 0 && (
           <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 border border-amber-200">
             <span className="text-sm font-medium text-amber-800">
               {selectedSuppliers.length} firma seçildi
@@ -824,6 +1048,7 @@ export default function SubcontractorsPage() {
           </div>
         )}
 
+        {filteredSuppliers.length > 0 && (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-secondary-200">
@@ -832,12 +1057,12 @@ export default function SubcontractorsPage() {
                   <th className="table-header w-12">
                     <input
                       type="checkbox"
-                      checked={selectedSuppliers.length === invoiceCompanySuppliers.length}
+                      checked={selectedSuppliers.length === filteredSuppliers.length}
                       onChange={() => {
-                        if (selectedSuppliers.length === invoiceCompanySuppliers.length) {
+                        if (selectedSuppliers.length === filteredSuppliers.length) {
                           setSelectedSuppliers([]);
                         } else {
-                          setSelectedSuppliers(invoiceCompanySuppliers.map(s => s.id));
+                          setSelectedSuppliers(filteredSuppliers.map(s => s.id));
                         }
                       }}
                       className="rounded border-secondary-300"
@@ -851,7 +1076,7 @@ export default function SubcontractorsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-secondary-200 bg-white">
-                {invoiceCompanySuppliers.map((supplier) => (
+                {filteredSuppliers.map((supplier) => (
                   <tr key={supplier.id} className="hover:bg-secondary-50">
                     <td className="table-cell">
                       <input
@@ -974,6 +1199,7 @@ export default function SubcontractorsPage() {
             </table>
           </div>
         </div>
+        )}
       </div>
     );
   };
@@ -1038,7 +1264,7 @@ export default function SubcontractorsPage() {
         <div className="mb-6 flex items-center justify-between border-b border-secondary-200">
           <nav className="-mb-px flex space-x-8">
             <button
-              onClick={() => setActiveTab('pending')}
+              onClick={() => handleTabChange('pending')}
               className={`
                 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium
                 ${activeTab === 'pending'
@@ -1057,7 +1283,7 @@ export default function SubcontractorsPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('subcontractors')}
+              onClick={() => handleTabChange('subcontractors')}
               className={`
                 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium
                 ${activeTab === 'subcontractors'
@@ -1076,7 +1302,7 @@ export default function SubcontractorsPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('invoice_companies')}
+              onClick={() => handleTabChange('invoice_companies')}
               className={`
                 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium
                 ${activeTab === 'invoice_companies'

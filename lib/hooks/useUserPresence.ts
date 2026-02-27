@@ -16,9 +16,11 @@ export function useUserPresence(userId: string | undefined) {
 
     try {
       // Update last_seen_at via RPC (without logging)
+      // This RPC call should NOT trigger auth state changes
       await supabase.rpc('update_user_last_seen', { user_uuid: currentUserIdRef.current });
     } catch (error) {
-      console.error('Error updating presence:', error);
+      // Silent fail - don't spam console
+      // console.error('Error updating presence:', error);
     }
   }, []);
 

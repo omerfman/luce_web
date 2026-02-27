@@ -5,6 +5,7 @@ import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { User, Role, Company, Permission, PermissionRecord } from '@/types';
 import { useUserPresence } from '@/lib/hooks/useUserPresence';
+import { isSuperAdmin as checkIsSuperAdmin } from '@/lib/permissions';
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +13,7 @@ interface AuthContextType {
   role: Role | null;
   company: Company | null;
   permissions: Permission[];
+  isSuperAdmin: boolean;
   isLoading: boolean;
   signOut: () => Promise<void>;
   hasPermission: (resource: string, action: string, scope?: string) => boolean;
@@ -25,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Track user presence (login/logout/heartbeat)
@@ -44,7 +47,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔐 [AuthContext] Auth state changed:', event);
+      
+      // Only process actual auth changes, not silent token refreshes
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('🔄 [AuthContext] Token refreshed silently, skipping profile fetch');
+        return; // Don't refetch profile on token refresh
+      }
+      
       setSupabaseUser(session?.user ?? null);
       if (session?.user) {
         fetchUserProfile(session.user.id);
@@ -53,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRole(null);
         setCompany(null);
         setPermissions([]);
+        setIsSuperAdmin(false);
         setIsLoading(false);
       }
     });
@@ -110,7 +122,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         });
         
-        setPermissions(allPermissions);
+        // Filter out invalid permissions (undefined values)
+        const validPermissions = allPermissions.filter(p => 
+          p && p.resource && p.action && p.scope
+        );
+        
+        setPermissions(validPermissions);
+        
+        // Check if user is super admin
+        const superAdmin = checkIsSuperAdmin(validPermissions);
+        setIsSuperAdmin(superAdmin);
+        
+        // Debug logging
+        console.log('🔐 [AuthContext] User permissions loaded:', {
+          userId: userData.id,
+          roleId: userData.role_id,
+          roleName: (userData.role as any)?.name,
+          totalPermissions: allPermissions.length,
+          validPermissions: validPermissions.length,
+          permissions: validPermissions.map(p => `${p.resource}.${p.action}.${p.scope}`),
+          isSuperAdmin: superAdmin
+        });
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -127,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(null);
     setCompany(null);
     setPermissions([]);
+    setIsSuperAdmin(false);
     
     // Clear storage
     if (userId) {
@@ -155,6 +188,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     scope: string = 'company'
   ): boolean {
     if (!permissions || permissions.length === 0) return false;
+
+    // Super admin otomatik olarak tüm yetkilere sahip
+    if (isSuperAdmin) {
+      return true;
+    }
 
     return permissions.some((perm) => {
       // Check for wildcard permissions (Super Admin has * *)
@@ -187,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role,
     company,
     permissions,
+    isSuperAdmin,
     isLoading,
     signOut,
     hasPermission,

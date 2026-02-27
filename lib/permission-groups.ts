@@ -120,11 +120,28 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    id: 'card_statements',
+    label: 'Kredi Kartı Ekstreleri',
+    description: 'Kredi kartı ekstresi yükleme, eşleştirme ve yönetimi',
+    icon: '💳',
+    order: 8,
+    permissions: [
+      { resource: 'card_statements', action: 'read', scope: 'company' },
+      { resource: 'card_statements', action: 'create', scope: 'company' },
+      { resource: 'card_statements', action: 'update', scope: 'company' },
+      { resource: 'card_statements', action: 'delete', scope: 'company' },
+      { resource: 'card_statements', action: 'assign', scope: 'company' },
+      { resource: 'card_statements', action: 'verify', scope: 'company' },
+      { resource: 'card_statements', action: 'export', scope: 'company' },
+      { resource: 'card_statements', action: 'manage', scope: 'company' },
+    ],
+  },
+  {
     id: 'activity_logs',
     label: 'Aktivite Logları',
     description: 'Sistem aktivitelerini görüntüleme',
     icon: '📋',
-    order: 8,
+    order: 9,
     permissions: [
       { resource: 'activity_logs', action: 'read', scope: 'company' },
       { resource: 'activity_logs', action: 'export', scope: 'company' },
@@ -136,7 +153,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     label: 'Raporlar',
     description: 'Rapor görüntüleme ve oluşturma',
     icon: '📊',
-    order: 9,
+    order: 10,
     permissions: [
       { resource: 'reports', action: 'read', scope: 'company' },
       { resource: 'reports', action: 'create', scope: 'company' },
@@ -148,7 +165,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     label: 'Şirket Ayarları',
     description: 'Şirket bilgileri ve ayarlar',
     icon: '⚙️',
-    order: 10,
+    order: 11,
     permissions: [
       { resource: 'companies', action: 'read', scope: 'company' },
       { resource: 'companies', action: 'update', scope: 'company' },
@@ -167,6 +184,7 @@ export const ACTION_LABELS: Record<string, string> = {
   manage: 'Tam Yönetim',
   assign: 'Atama',
   reject: 'Reddetme',
+  verify: 'Onaylama',
   export: 'Dışa Aktarma',
 };
 
@@ -181,6 +199,7 @@ export const ACTION_DESCRIPTIONS: Record<string, string> = {
   manage: 'Tüm işlemleri yapabilir (oluşturma, güncelleme, silme)',
   assign: 'Kayıtları projelere veya kullanıcılara atayabilir',
   reject: 'Hatalı faturları reddedebilir ve reddi geri alabilir',
+  verify: 'Eşleştirmeleri onaylayabilir',
   export: 'Verileri dışa aktarabilir',
 };
 
@@ -188,6 +207,15 @@ export const ACTION_DESCRIPTIONS: Record<string, string> = {
  * Önerilen rol şablonları
  */
 export const ROLE_TEMPLATES = {
+  super_admin: {
+    name: 'Süper Admin',
+    description: 'Tüm şirketlere ve tüm kaynaklara erişim yetkisi (companies.manage.all)',
+    permissions: [
+      { resource: 'companies' as const, action: 'manage' as const, scope: 'all' as const },
+      // Tüm diğer yetkiler otomatik olarak verilir çünkü super admin kontrolü var
+      ...PERMISSION_GROUPS.flatMap(group => group.permissions)
+    ] as Permission[],
+  },
   admin: {
     name: 'Yönetici',
     description: 'Tüm yetkilere sahip şirket yöneticisi',
@@ -195,9 +223,10 @@ export const ROLE_TEMPLATES = {
   },
   accountant: {
     name: 'Muhasebe',
-    description: 'Fatura ve ödeme yönetimi',
+    description: 'Fatura, kredi kartı ekstreleri ve ödeme yönetimi',
     permissions: [
       ...(PERMISSION_GROUPS.find(g => g.id === 'invoices')?.permissions || []),
+      ...(PERMISSION_GROUPS.find(g => g.id === 'card_statements')?.permissions || []),
       ...(PERMISSION_GROUPS.find(g => g.id === 'informal_payments')?.permissions || []),
       ...(PERMISSION_GROUPS.find(g => g.id === 'suppliers')?.permissions || []),
       { resource: 'projects' as const, action: 'read' as const, scope: 'company' as const },

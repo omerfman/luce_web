@@ -41,6 +41,8 @@ export function Sidebar({ children }: SidebarProps) {
     },
     { name: 'Müşteriler', href: '/customers', icon: UsersIcon, resource: 'invoices', action: 'read' },
     { name: 'Gayri Resmi Ödemeler', href: '/informal-payments', icon: WalletIcon, resource: 'invoices', action: 'read' },
+    { name: 'Kredi Kartı Ekstreleri', href: '/card-statements', icon: CreditCardIcon, resource: 'invoices', action: 'read' },
+    { name: 'Kasa Fişleri', href: '/petty-cash', icon: ReceiptIcon, resource: 'invoices', action: 'read' },
     { name: 'Taşeron Listesi', href: '/subcontractors', icon: BuildingIcon, resource: 'invoices', action: 'read' },
     { name: 'Kullanıcılar', href: '/users', icon: UsersIcon, resource: 'users', action: 'read' },
     { name: 'Roller', href: '/roles', icon: ShieldIcon, resource: 'roles', action: 'read' },
@@ -194,13 +196,27 @@ export function Sidebar({ children }: SidebarProps) {
         <header className="flex h-16 items-center border-b border-secondary-200 bg-white px-4 lg:px-6">
           <div className="ml-12 lg:ml-0">
             <h2 className="text-lg lg:text-xl font-semibold text-secondary-900">
-              {navigation.find((item) => item.href === pathname)?.name || 'Dashboard'}
+              {(() => {
+                // Check regular nav items
+                const directMatch = navigation.find((item) => item.href === pathname);
+                if (directMatch) return directMatch.name;
+                
+                // Check accordion sub-items
+                for (const item of navigation) {
+                  if (item.subItems) {
+                    const subMatch = item.subItems.find((sub) => sub.href === pathname);
+                    if (subMatch) return subMatch.name;
+                  }
+                }
+                
+                return 'Dashboard';
+              })()}
             </h2>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );
@@ -299,6 +315,22 @@ function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+
+function CreditCardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  );
+}
+
+function ReceiptIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2zM10 8.5a.5.5 0 11-1 0 .5.5 0 011 0zm5 5a.5.5 0 11-1 0 .5.5 0 011 0z" />
     </svg>
   );
 }

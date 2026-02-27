@@ -112,6 +112,7 @@ export async function createCustomer(
 
 /**
  * Mevcut müşteriyi getirir, yoksa yeni oluşturur (Get or Create)
+ * Eğer mevcut kayıtta isim "Bilinmeyen Müşteri" veya boşsa ve yeni bir isim sağlanmışsa, kaydı günceller
  * 
  * @param vkn - Vergi Kimlik Numarası
  * @param name - Firma adı
@@ -126,6 +127,19 @@ export async function getOrCreateCustomer(
   // Önce mevcut kaydı kontrol et
   const existing = await getCustomerByVKN(vkn, companyId);
   if (existing) {
+    // Eğer mevcut kayıtta isim "Bilinmeyen Müşteri" veya boşsa ve yeni bir isim sağlanmışsa, güncelle
+    const needsUpdate = 
+      name && 
+      name.trim() !== '' && 
+      name !== 'Bilinmeyen Müşteri' &&
+      (!existing.name || existing.name === 'Bilinmeyen Müşteri' || existing.name.trim() === '');
+    
+    if (needsUpdate) {
+      console.log(`Updating customer name for VKN ${vkn}: "${existing.name}" -> "${name}"`);
+      const updated = await updateCustomer(existing.id, { name });
+      return updated || existing;
+    }
+    
     return existing;
   }
 
