@@ -74,19 +74,23 @@ const STOPWORDS = [
 
 // Firma adı kısaltmaları - otomatik genişletme için
 const ABBREVIATIONS: Record<string, string[]> = {
-  'inş': ['inşaat', 'inş'],
-  'san': ['sanayi', 'san'],
-  'tic': ['ticaret', 'tic'],
-  'ti': ['ticaret', 'ti'],  // Başka anlamları da olabilir ama çoğunlukla ticaret
+  'inş': ['inşaat', 'inş', 'insaat'],  // Türkçe karakterli ve karaktersiz versiyonlar
+  'ins': ['inşaat', 'insaat', 'ins'],  // "INS" kısaltması ekstrelerden gelebilir
+  'insaa': ['inşaat', 'insaat'],       // "INSAA" formatı (Garanti ekstreleri)
+  'insaat': ['inşaat', 'insaat'],      // Tam hali (Türkçe karaktersiz)
+  'san': ['sanayi', 'sanayi', 'san'],
+  'tic': ['ticaret', 'ticaret', 'tic'],
+  'ti': ['ticaret', 'ticaret', 'ti'],  // Başka anlamları da olabilir ama çoğunlukla ticaret
   'ltd': ['limited', 'ltd'],
-  'şti': ['şirketi', 'şti'],
-  'paz': ['pazarlama', 'paz'],
-  'ith': ['ithalat', 'ith'],
-  'ihr': ['ihracat', 'ihr'],
-  'elk': ['elektronik', 'elk'],
-  'oto': ['otomotiv', 'oto'],
-  'end': ['endüstri', 'end'],
-  'müh': ['mühendislik', 'müh']
+  'şti': ['şirketi', 'şti', 'sti'],
+  'sti': ['şirketi', 'sti'],            // Türkçe karaktersiz versiyon
+  'paz': ['pazarlama', 'pazarlama', 'paz'],
+  'ith': ['ithalat', 'ithalat', 'ith'],
+  'ihr': ['ihracat', 'ihracat', 'ihr'],
+  'elk': ['elektronik', 'elektronik', 'elk'],
+  'oto': ['otomotiv', 'otomotiv', 'oto'],
+  'end': ['endüstri', 'endustri', 'end'],
+  'müh': ['mühendislik', 'muhendislik', 'müh', 'muh']
 };
 
 // Tutar eşleşme toleransı (yuvarla hatalarını kapatır)
@@ -188,7 +192,7 @@ function removeStopwords(tokens: string[]): string[] {
 
 /**
  * İki kelime listesi arasındaki ortak kelimeleri bulur
- * GELISMİS VERSİYON: Partial matching destekler
+ * GELISMİS VERSİYON: Partial matching ve Türkçe karakter varyasyonları destekler
  * 
  * @param tokens1 - İlk kelime listesi
  * @param tokens2 - İkinci kelime listesi
@@ -209,9 +213,18 @@ function findCommonWords(
     return { exact, partial: [] };
   }
   
-  // Kısmi eşleşmeler (bir kelime diğerinin başında ise)
+  // Kısmi eşleşmeler (bir kelime diğerinin başında ise veya Türkçe karakter varyasyonu)
   const partial: string[] = [];
   const partialMatches = new Set<string>(); // Tekrar eklemeyi engellemek için
+  
+  // Türkçe karakter normalizasyon helper
+  const normalizeTurkish = (text: string) => 
+    text.replace(/ş/g, 's')
+        .replace(/ğ/g, 'g')
+        .replace(/ı/g, 'i')
+        .replace(/ü/g, 'u')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c');
   
   for (const token1 of tokens1) {
     // Eğer tam eşleşme varsa, kısmi eşleşmeyi atlat
@@ -220,7 +233,7 @@ function findCommonWords(
     for (const token2 of tokens2) {
       if (exact.includes(token2)) continue;
       
-      // Daha uzun olanla daha kısa olanı karşılaştır
+      // 1. Prefix matching (başlangıç eşleşmesi)
       const longer = token1.length > token2.length ? token1 : token2;
       const shorter = token1.length > token2.length ? token2 : token1;
       
@@ -230,6 +243,35 @@ function findCommonWords(
         if (!partialMatches.has(matchKey)) {
           partial.push(shorter);
           partialMatches.add(matchKey);
+        }
+        continue;
+      }
+      
+      // 2. Türkçe karakter varyasyonu kontrolü
+      // "insaa" vs "inşaat", "muhendis" vs "mühendis" gibi
+      const normalized1 = normalizeTurkish(token1);
+      const normalized2 = normalizeTurkish(token2);
+      
+      if (normalized1 === normalized2 && token1 !== token2) {
+        const matchKey = `turkish-${token1}-${token2}`;
+        if (!partialMatches.has(matchKey)) {
+          partial.push(token1);
+          partialMatches.add(matchKey);
+        }
+        continue;
+      }
+      
+      // 3. Türkçe karaktersiz versiyonlarla prefix matching
+      if (normalized1.length >= 3 && normalized2.length >= 3) {
+        const longerNorm = normalized1.length > normalized2.length ? normalized1 : normalized2;
+        const shorterNorm = normalized1.length > normalized2.length ? normalized2 : normalized1;
+        
+        if (longerNorm.startsWith(shorterNorm)) {
+          const matchKey = `turkish-prefix-${token1}-${token2}`;
+          if (!partialMatches.has(matchKey)) {
+            partial.push(token1.length < token2.length ? token1 : token2);
+            partialMatches.add(matchKey);
+          }
         }
       }
     }

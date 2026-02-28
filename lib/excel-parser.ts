@@ -199,8 +199,9 @@ function extractCardLastFour(cardStr: string): string | undefined {
  * Desteklenen formatlar:
  * 1. YKB: "OZEN MOTORLU ARACLAR ISTANBUL TR 5350 TL'lik işlemin 1/5 taksidi"
  * 2. Garanti: "ÇALIKLAR İNŞAAT YAPI İSTANBUL TR 90754,42 TL'lik işlemin 3/3 taksidi"
- * 3. "BETEK-YAPIDEK SPOT BOYA V(4/5) İSTANBUL"
- * 4. Denizbank: İşlem adı "Peş. Taksit 2.Tk" + Açıklama "Taksit 2 / 6" (Toplam olmayabilir)
+ * 3. Parantez içinde: "BETEK-YAPIDEK SPOT BOYA V(4/5) İSTANBUL"
+ * 4. Boşluklu: "PARAM /NEYZEN INSAA ISTANBUL 2/3 Taksit"
+ * 5. Denizbank: İşlem adı "Peş. Taksit 2.Tk" + Açıklama "Taksit 2 / 6" (Toplam olmayabilir)
  */
 interface InstallmentInfo {
   isInstallment: boolean;
@@ -217,7 +218,7 @@ function extractInstallmentInfo(
   
   // Format 1: "1/5 taksidi" veya "3/3 taksit" (YKB/Garanti)
   // Türkçe karakter varyasyonları: taksit, taksiti, taksidi, taksıtı
-  const taksitPattern = /(\d+)\/(\d+)\s*taks[iı][tı]?[iı]?d?[iı]?/i;
+  const taksitPattern = /(\d+)\/(\d+)\s*[Tt]aks[iı][tı]?[iı]?d?[iı]?/i;
   let match = transactionName.match(taksitPattern);
   if (match) {
     result.isInstallment = true;
@@ -458,7 +459,11 @@ function parseGarantiCardNumber(cardInfoStr: string): {
 /**
  * Garanti taksit bilgisini parse eder
  * 
- * Format: "INTEMA VITRA-CALIKLAR MAR(2/3) İSTANBUL"
+ * Desteklenen Formatlar:
+ * 1. Parantez içinde: "INTEMA VITRA-CALIKLAR MAR(2/3) İSTANBUL"
+ * 2. Boşluklu: "PARAM /NEYZEN INSAA ISTANBUL 2/3 Taksit"
+ * 3. Boşluklu (küçük harf): "FIRMA ADI 2/3 taksit"
+ * 
  * Çıktı: { isInstallment: true, current: 2, total: 3 }
  */
 function extractGarantiInstallmentInfo(işlemAdı: string): {
@@ -471,25 +476,43 @@ function extractGarantiInstallmentInfo(işlemAdı: string): {
     return { isInstallment: false };
   }
   
-  // Pattern: (X/Y) formatı
-  const match = işlemAdı.match(/\((\d+)\/(\d+)\)/);
+  // Pattern 1: (X/Y) formatı - parantez içinde
+  const parenMatch = işlemAdı.match(/\((\d+)\/(\d+)\)/);
   
-  if (!match) {
-    return { isInstallment: false };
+  if (parenMatch) {
+    const current = parseInt(parenMatch[1], 10);
+    const total = parseInt(parenMatch[2], 10);
+    
+    // Taksit bilgisini temizle
+    const cleanName = işlemAdı.replace(/\(\d+\/(\d+)\)/, '').trim();
+    
+    return {
+      isInstallment: true,
+      installmentCurrent: current,
+      installmentTotal: total,
+      cleanName
+    };
   }
   
-  const current = parseInt(match[1], 10);
-  const total = parseInt(match[2], 10);
+  // Pattern 2: X/Y Taksit veya X/Y taksit formatı
+  const spaceMatch = işlemAdı.match(/(\d+)\/(\d+)\s*[Tt]aksit/);
   
-  // Taksit bilgisini temizle
-  const cleanName = işlemAdı.replace(/\(\d+\/\d+\)/, '').trim();
+  if (spaceMatch) {
+    const current = parseInt(spaceMatch[1], 10);
+    const total = parseInt(spaceMatch[2], 10);
+    
+    // Taksit bilgisini temizle
+    const cleanName = işlemAdı.replace(/\d+\/\d+\s*[Tt]aksit/g, '').trim();
+    
+    return {
+      isInstallment: true,
+      installmentCurrent: current,
+      installmentTotal: total,
+      cleanName
+    };
+  }
   
-  return {
-    isInstallment: true,
-    installmentCurrent: current,
-    installmentTotal: total,
-    cleanName
-  };
+  return { isInstallment: false };
 }
 
 /**
@@ -609,7 +632,14 @@ function parseGarantiStatement(data: any[][]): ParsedStatement {
         }
       }
       
-      const installmentInfo = extractGarantiInstallmentInfo(String(işlem));
+      // Taksit bilgisini hem işlem adında hem de etiket sütununda ara
+      let installmentInfo = extractGarantiInstallmentInfo(String(işlem));
+      
+      // İşlem adında bulunamadıysa, etiket sütununa bak
+      if (!installmentInfo.isInstallment && etiket) {
+        installmentInfo = extractGarantiInstallmentInfo(String(etiket));
+      }
+      
       const finalName = installmentInfo.cleanName || String(işlem);
       
       const item: ParsedStatementItem = {
