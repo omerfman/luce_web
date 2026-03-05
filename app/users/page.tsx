@@ -33,6 +33,9 @@ export default function UsersPage() {
   
   const [editFormData, setEditFormData] = useState({
     name: '',
+    email: '',
+    password: '',
+    is_active: true,
     role_id: '',
     company_id: '',
     added_permissions: [] as Permission[],
@@ -139,6 +142,9 @@ export default function UsersPage() {
     
     setEditFormData({
       name: user.name,
+      email: user.email,
+      password: '',
+      is_active: user.is_active,
       role_id: user.role_id,
       company_id: user.company_id,
       added_permissions: addedPerms,
@@ -215,21 +221,28 @@ export default function UsersPage() {
     setIsSubmitting(true);
 
     try {
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
+      const response = await fetch('/api/users/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: editingUser.id,
           name: editFormData.name,
+          email: editFormData.email,
+          password: editFormData.password,
+          is_active: editFormData.is_active,
           role_id: editFormData.role_id,
           company_id: editFormData.company_id,
-          meta: {
-            ...editingUser.meta,
-            added_permissions: editFormData.added_permissions,
-            removed_permissions: editFormData.removed_permissions,
-          },
-        })
-        .eq('id', editingUser.id);
+          added_permissions: editFormData.added_permissions,
+          removed_permissions: editFormData.removed_permissions,
+          meta: editingUser.meta,
+        }),
+      });
 
-      if (updateError) throw updateError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Kullanıcı güncellenemedi');
+      }
 
       setSuccess('Kullanıcı başarıyla güncellendi!');
       setShowEditModal(false);
@@ -712,6 +725,62 @@ export default function UsersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      E-posta
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={editFormData.email}
+                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                      className="input"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Yeni Şifre (isteğe bağlı)
+                    </label>
+                    <input
+                      type="password"
+                      minLength={6}
+                      value={editFormData.password}
+                      onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                      className="input"
+                      placeholder="Boş bırakılırsa değişmez"
+                    />
+                    <p className="text-xs text-secondary-500 mt-1">
+                      Sadece şifreyi değiştirmek istiyorsanız doldurun
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Durum
+                    </label>
+                    <div className="flex items-center gap-3 mt-2">
+                      <label className="flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editFormData.is_active}
+                          onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                          className="h-5 w-5 rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="ml-2 text-sm text-secondary-700">
+                          Kullanıcı Aktif
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-secondary-500 mt-1">
+                      Pasif kullanıcılar sisteme giriş yapamaz
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
                       Rol
                     </label>
                     <select
@@ -727,24 +796,24 @@ export default function UsersPage() {
                       ))}
                     </select>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    Şirket
-                  </label>
-                  <select
-                    required
-                    value={editFormData.company_id}
-                    onChange={(e) => setEditFormData({ ...editFormData, company_id: e.target.value })}
-                    className="input"
-                  >
-                    {companies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-700 mb-1">
+                      Şirket
+                    </label>
+                    <select
+                      required
+                      value={editFormData.company_id}
+                      onChange={(e) => setEditFormData({ ...editFormData, company_id: e.target.value })}
+                      className="input"
+                    >
+                      {companies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Permission Groups */}

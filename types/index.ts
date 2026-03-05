@@ -23,6 +23,7 @@ export interface User {
   name: string;
   company_id: string;
   role_id: string;
+  is_active: boolean;
   meta: Record<string, any> | null;
   custom_permissions?: Permission[]; // User-specific permission overrides
   created_at: string;

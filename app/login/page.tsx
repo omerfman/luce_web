@@ -1,19 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { emailSchema } from '@/lib/validation';
+import { useSearchParams } from 'next/navigation';
 // import { useRouter } from 'next/navigation'; // Reserved for future use
 import Link from 'next/link';
 import InstallPWAButton from '@/components/ui/InstallPWAButton';
 
 export default function LoginPage() {
   // const router = useRouter(); // Reserved for future use
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    // Check for error parameter in URL
+    const errorParam = searchParams.get('error');
+    if (errorParam === 'inactive') {
+      setError('Kullanıcı hesabınız pasif durumda. Lütfen yöneticinizle iletişime geçin.');
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

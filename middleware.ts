@@ -68,6 +68,24 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/auth/callback', '/signup', '/forgot-password', '/reset-password'];
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route));
 
+  // If authenticated, check if user is active
+  if (session) {
+    const { data: user } = await supabase
+      .from('users')
+      .select('is_active')
+      .eq('id', session.user.id)
+      .single();
+
+    // If user is inactive, sign them out and redirect to login
+    if (user && user.is_active === false) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('error', 'inactive');
+      return NextResponse.redirect(url);
+    }
+  }
+
   // If not authenticated and trying to access protected route
   if (!session && !isPublicRoute) {
     const url = request.nextUrl.clone();
