@@ -232,7 +232,7 @@ export async function GET(
     if (supplier.is_current_account) {
       console.log('🔄 Checking card payments for current account supplier:', supplierId);
       
-      // A) Faturaya bağlı eşleştirmeler (eski yöntem)
+      // A) Faturaya bağlı eşleştirmeler (invoice'ların supplier_id'si bu firmaysa)
       const { data: cardPaymentsViaInvoice } = await supabase
         .from('statement_invoice_matches')
         .select(`
@@ -246,12 +246,10 @@ export async function GET(
           ),
           invoice:invoices!inner(
             id,
-            supplier_id,
-            supplier_vkn,
-            supplier_name
+            supplier_id
           )
         `)
-        .or(`invoice.supplier_id.eq.${supplierId},invoice.supplier_vkn.eq.${supplier.vkn || 'NULL'},invoice.supplier_name.eq.${supplier.name}`)
+        .eq('invoice.supplier_id', supplierId)
         .order('matched_at', { ascending: false });
 
       // B) Doğrudan firmaya bağlı eşleştirmeler (YENİ: faturasız)
@@ -279,10 +277,15 @@ export async function GET(
       cardPaymentStats = {
         count: cardPayments.length,
         totalAmount: cardPayments.reduce((sum: number, match: any) => 
-          sum + (parseFloat(match.statement_item?.amount) || 0), 0),
+          sum + Math.abs(parseFloat(match.statement_item?.amount) || 0), 0),
       };
 
-      console.log('🔄 Card payments found:', cardPaymentStats.count, 'Total:', cardPaymentStats.totalAmount);
+      console.log('🔄 Card payments found:', {
+        viaInvoice: cardPaymentsViaInvoice?.length || 0,
+        viaSupplier: cardPaymentsViaSupplier?.length || 0,
+        total: cardPaymentStats.count,
+        totalAmount: cardPaymentStats.totalAmount
+      });
     }
 
     // Bakiye: Giden faturalar (gelir) - Gelen faturalar (gider) - Kredi kartı ödemeleri
