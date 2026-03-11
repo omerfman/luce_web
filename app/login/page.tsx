@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { emailSchema } from '@/lib/validation';
 import { useSearchParams } from 'next/navigation';
@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import InstallPWAButton from '@/components/ui/InstallPWAButton';
 
-export default function LoginPage() {
+function LoginForm() {
   // const router = useRouter(); // Reserved for future use
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
@@ -186,5 +186,22 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-secondary-50">
+        <div className="card w-full max-w-md">
+          <div className="mb-6 text-center">
+            <h1 className="text-3xl font-bold text-secondary-900">Luce Mimarlık</h1>
+            <p className="mt-2 text-sm text-secondary-600">Yükleniyor...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

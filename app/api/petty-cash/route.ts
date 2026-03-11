@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/petty-cash - List all petty cash receipts (card items assigned to projects)
 export async function GET(request: NextRequest) {
   try {
