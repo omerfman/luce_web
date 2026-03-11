@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { findMatchingInvoices } from '@/lib/statement-matcher';
+import { findMatchingInvoices, findMatchingCurrentAccountSuppliers } from '@/lib/statement-matcher';
 import type { ParsedStatementItem } from '@/lib/excel-parser';
 import { checkApiPermission } from '@/lib/api/permissions';
 
@@ -65,11 +65,18 @@ export async function GET(
     // Find matching invoices
     const matchResults = await findMatchingInvoices(parsedItem, companyId, supabaseAdmin);
 
+    // YENI: Cari hesap firmaları için öneri bul (fatura olmadan)
+    const currentAccountSuggestions = await findMatchingCurrentAccountSuppliers(
+      parsedItem,
+      companyId,
+      supabaseAdmin
+    );
     return NextResponse.json({
       item,
       exactMatches: matchResults.exact,
       suggestedMatches: matchResults.suggested,
-      noMatch: matchResults.noMatch
+      currentAccountSuppliers: currentAccountSuggestions, // Yeni alan
+      noMatch: matchResults.noMatch && currentAccountSuggestions.length === 0
     });
 
   } catch (error: any) {

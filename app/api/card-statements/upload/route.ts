@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { parseStatementExcel, validateParsedStatement } from '@/lib/excel-parser';
-import { matchStatementItems } from '@/lib/statement-matcher';
+import { matchStatementItems, findMatchingCurrentAccountSuppliers, SUPPLIER_AUTO_MATCH_THRESHOLD } from '@/lib/statement-matcher';
 import { checkApiPermission } from '@/lib/api/permissions';
 
 // Server-side Supabase client
@@ -227,18 +227,47 @@ async function performAutoMatching(
           rowNumber,
           invoiceId: bestMatch.invoice.id,
           matchType: bestMatch.matchType,
-          matchScore: bestMatch.matchScore,
+          matchScore: Math.round(bestMatch.matchScore),
           notes: bestMatch.reasons.join('; ')
         });
       }
     });
 
-    if (matchesToInsert.length === 0) {
-      console.log('⚠️  No auto-matches found (all scores < 80)');
+    // ======================================
+    // 2. PASS: Cari hesap firma eşleştirmesi (fatura eşleşmeyen satırlar için)
+    // ======================================
+    const matchedRowNumbers = new Set(matchesToInsert.map((m: any) => m.rowNumber));
+    const supplierMatchesToInsert: any[] = [];
+
+    for (const item of items) {
+      if (matchedRowNumbers.has(item.rowNumber)) continue; // Faturayla zaten eşleşti
+      if (item.transactionType === 'payment') continue;    // Borç ödemesini atla
+
+      const supplierMatches = await findMatchingCurrentAccountSuppliers(item, companyId, supabaseAdmin);
+      const best = supplierMatches.find(m => m.matchType === 'current_account_auto');
+
+      if (best) {
+        console.log(`🏢 Cari hesap oto-eşleşme: satır ${item.rowNumber} → "${best.supplier.name}" (%${best.matchScore})`);
+        supplierMatchesToInsert.push({
+          rowNumber: item.rowNumber,
+          supplierId: best.supplier.id,
+          matchScore: Math.round(best.matchScore),
+          notes: `Cari hesap otomatik eşleşme: ${best.reasons.join('; ')}`
+        });
+      }
+    }
+
+    // ======================================
+    // 3. KAYIT: Fatura ve cari eşleştirmeleri DB'ye yaz
+    // ======================================
+    const allToInsert = [...matchesToInsert, ...supplierMatchesToInsert]; // combined
+
+    if (allToInsert.length === 0) {
+      console.log('⚠️  No auto-matches found (invoice or supplier)');
       return;
     }
     
-    console.log(`📝 Preparing to insert ${matchesToInsert.length} matches...`);
+    console.log(`📝 Preparing to insert: ${matchesToInsert.length} invoice + ${supplierMatchesToInsert.length} supplier match(es)...`);
 
     // Get item IDs
     const { data: statementItems } = await supabaseAdmin
@@ -253,16 +282,17 @@ async function performAutoMatching(
       statementItems.map(item => [item.row_number, item.id])
     );
 
-    // Insert matches
+    // Insert invoice matches
     const matchRecords = matchesToInsert
-      .map(match => ({
+      .map((match: any) => ({
         statement_item_id: rowToId.get(match.rowNumber),
         invoice_id: match.invoiceId,
+        supplier_id: null,
         match_type: match.matchType,
         match_score: match.matchScore,
         notes: match.notes
       }))
-      .filter(m => m.statement_item_id); // Only valid mappings
+      .filter((m: any) => m.statement_item_id);
 
     if (matchRecords.length > 0) {
       const { error } = await supabaseAdmin
@@ -270,9 +300,33 @@ async function performAutoMatching(
         .insert(matchRecords);
 
       if (error) {
-        console.error('Match insertion error:', error);
+        console.error('Invoice match insertion error:', error);
       } else {
-        console.log(`✅ Auto-matched ${matchRecords.length} items`);
+        console.log(`✅ Auto-matched ${matchRecords.length} items to invoices`);
+      }
+    }
+
+    // Insert supplier (cari hesap) matches
+    const supplierMatchRecords = supplierMatchesToInsert
+      .map((match: any) => ({
+        statement_item_id: rowToId.get(match.rowNumber),
+        invoice_id: null,
+        supplier_id: match.supplierId,
+        match_type: 'current_account_auto',
+        match_score: match.matchScore,
+        notes: match.notes
+      }))
+      .filter((m: any) => m.statement_item_id);
+
+    if (supplierMatchRecords.length > 0) {
+      const { error: supplierError } = await supabaseAdmin
+        .from('statement_invoice_matches')
+        .insert(supplierMatchRecords);
+
+      if (supplierError) {
+        console.error('Supplier match insertion error:', supplierError);
+      } else {
+        console.log(`✅ Auto-assigned ${supplierMatchRecords.length} items to current account suppliers`);
       }
     }
 

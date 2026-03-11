@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import ExcelJS from 'exceljs';
 
 interface PettyCashReceipt {
   id: string;
@@ -108,6 +109,218 @@ export default function PettyCashPage() {
     }
   }
 
+  async function handleExportExcel() {
+    try {
+      if (!data || data.items.length === 0) {
+        alert('Dışa aktarılacak kasa fişi bulunamadı!');
+        return;
+      }
+
+      // Excel için veri hazırlama
+      const dataToExport = data.items.map((item, index) => {
+        return {
+          sira: index + 1,
+          islemAdi: item.transaction_name,
+          proje: item.projects.name,
+          tutar: Math.abs(item.amount), // Mutlak değer al (negatif olabilir)
+          tarih: formatDate(item.transaction_date),
+          ekstre: item.card_statements.file_name,
+          kartSonDort: item.card_statements.card_last_four || '-',
+          notlar: item.notes || '-',
+        };
+      });
+
+      // ExcelJS ile çalışma kitabı oluştur
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Kasa Fişleri');
+
+      // Sütun başlıkları
+      const headers = ['Sıra', 'İşlem Adı', 'Proje', 'Tutar', 'Tarih', 'Ekstre', 'Kart', 'Notlar'];
+      
+      // Sütun genişlikleri
+      worksheet.columns = [
+        { key: 'sira', width: 8 },
+        { key: 'islemAdi', width: 35 },
+        { key: 'proje', width: 27 },
+        { key: 'tutar', width: 16 },
+        { key: 'tarih', width: 13 },
+        { key: 'ekstre', width: 30 },
+        { key: 'kartSonDort', width: 12 },
+        { key: 'notlar', width: 42 },
+      ];
+
+      // Başlık satırını ekle
+      const headerRow = worksheet.addRow(headers);
+      
+      // Başlık satırı stili (koyu mavi arka plan, beyaz yazı, kalın, ortalanmış)
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4472C4' }
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center'
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // Veri satırlarını ekle ve toplamı hesapla
+      let totalAmount = 0;
+
+      dataToExport.forEach((rowData, index) => {
+        const row = worksheet.addRow([
+          rowData.sira,
+          rowData.islemAdi,
+          rowData.proje,
+          rowData.tutar,
+          rowData.tarih,
+          rowData.ekstre,
+          rowData.kartSonDort,
+          rowData.notlar,
+        ]);
+        
+        // Toplamı hesapla
+        totalAmount += typeof rowData.tutar === 'number' ? rowData.tutar : 0;
+        
+        // Zebra striping (tek/çift satır renkleri)
+        const isEvenRow = (index + 1) % 2 === 0;
+        const bgColor = isEvenRow ? 'FFF2F2F2' : 'FFFFFFFF';
+        
+        row.eachCell((cell, colNumber) => {
+          // Arka plan rengi
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: bgColor }
+          };
+          
+          cell.font = {
+            size: 10
+          };
+          
+          // Para birimi formatı (Tutar: sütun 4)
+          if (colNumber === 4) {
+            cell.numFmt = '#,##0.00 "₺"';
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'right'
+            };
+          } else {
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'left',
+              wrapText: colNumber === 8 // Notlar sütunu için wrap text
+            };
+          }
+          
+          // İnce gri çerçeveler
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
+          };
+        });
+      });
+
+      // Toplam satırını ekle (yeşil arka plan, kalın, beyaz yazı)
+      const totalRow = worksheet.addRow([
+        '',
+        '',
+        'TOPLAM',
+        totalAmount,
+        '',
+        '',
+        '',
+        ''
+      ]);
+
+      totalRow.eachCell((cell, colNumber) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF2E7D32' } // Koyu yeşil
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11
+        };
+        
+        // Para birimi formatı (Tutar sütunu)
+        if (colNumber === 4) {
+          cell.numFmt = '#,##0.00 "₺"';
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right'
+          };
+        } else if (colNumber === 3) {
+          // "TOPLAM" yazısı
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right'
+          };
+        } else {
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'center'
+          };
+        }
+        
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'medium', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // AutoFilter ekle (tüm sütunlara dropdown filtre - toplam satırı hariç)
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: dataToExport.length + 1, column: headers.length }
+      };
+
+      // Dosya adını oluştur (tarih + filtre bilgisi)
+      const date = new Date().toISOString().split('T')[0];
+      let fileName = `KasaFisleri_${date}`;
+      
+      if (selectedProject !== 'all') {
+        const project = projects.find(p => p.id === selectedProject);
+        if (project) fileName += `_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      
+      fileName += '.xlsx';
+
+      // Excel dosyasını indir
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      
+      console.log(`Excel export: ${dataToExport.length} kasa fişi dışa aktarıldı`);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('Excel dosyası oluşturulurken bir hata oluştu');
+    }
+  }
+
   if (!user || isLoading) {
     return (
       <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -130,13 +343,25 @@ export default function PettyCashPage() {
       <div className="flex-1 overflow-auto">
         <div className="p-8">
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              💼 Kasa Fişleri
-            </h1>
-            <p className="text-gray-600">
-              Faturalarla eşleşmeyen ancak projelere atanmış harcamalar
-            </p>
+          <div className="mb-6 flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                💼 Kasa Fişleri
+              </h1>
+              <p className="text-gray-600">
+                Faturalarla eşleşmeyen ancak projelere atanmış harcamalar
+              </p>
+            </div>
+            <div className="flex gap-3">
+              {data.items.length > 0 && (
+                <Button 
+                  onClick={handleExportExcel}
+                  variant="ghost"
+                >
+                  📊 Excel İndir
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Stats Cards */}

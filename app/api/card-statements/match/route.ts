@@ -3,7 +3,10 @@
  * POST /api/card-statements/match
  * DELETE /api/card-statements/match
  * 
- * Manuel fatura eşleştirme ve eşleştirme kaldırma
+ * Manuel fatura eşleştirme ve cari hesap firma eşleştirme
+ * İki tip eşleştirme:
+ * 1. Fatura bazlı: { statementItemId, invoiceId }
+ * 2. Firma bazlı (cari hesap): { statementItemId, supplierId }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -29,26 +32,73 @@ export async function POST(request: NextRequest) {
 
     // Parse body
     const body = await request.json();
-    const { statementItemId, invoiceId, notes, matchScore, matchType } = body;
+    const { statementItemId, invoiceId, supplierId, notes, matchScore, matchType } = body;
 
-    if (!statementItemId || !invoiceId) {
+    // Validation: en az biri olmalı
+    if (!statementItemId) {
       return NextResponse.json(
-        { error: 'statementItemId ve invoiceId gerekli' },
+        { error: 'statementItemId gerekli' },
         { status: 400 }
       );
     }
 
+    if (!invoiceId && !supplierId) {
+      return NextResponse.json(
+        { error: 'invoiceId veya supplierId gerekli (en az biri)' },
+        { status: 400 }
+      );
+    }
+
+    if (invoiceId && supplierId) {
+      return NextResponse.json(
+        { error: 'Hem invoiceId hem supplierId gönderilemez, sadece biri olmalı' },
+        { status: 400 }
+      );
+    }
+
+    // Eğer supplier-only eşleştirme ise, supplier'ın cari hesap olduğunu kontrol et
+    if (supplierId && !invoiceId) {
+      const { data: supplier, error: supplierError } = await supabaseAdmin
+        .from('suppliers')
+        .select('is_current_account, name')
+        .eq('id', supplierId)
+        .single();
+
+      if (supplierError || !supplier) {
+        return NextResponse.json(
+          { error: 'Firma bulunamadı' },
+          { status: 404 }
+        );
+      }
+
+      if (!supplier.is_current_account) {
+        return NextResponse.json(
+          { error: `${supplier.name} cari hesap değil. Sadece cari hesap firmaları fatura olmadan eşleştirilebilir.` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create match
+    const insertData: any = {
+      statement_item_id: statementItemId,
+      match_type: matchType || (invoiceId ? 'manual' : 'current_account_direct'),
+      match_score: matchScore !== undefined ? matchScore : 100,
+      matched_by_user_id: userId,
+      notes: notes || null
+    };
+
+    if (invoiceId) {
+      insertData.invoice_id = invoiceId;
+    }
+
+    if (supplierId) {
+      insertData.supplier_id = supplierId;
+    }
+
     const { data: match, error: matchError } = await supabaseAdmin
       .from('statement_invoice_matches')
-      .insert({
-        statement_item_id: statementItemId,
-        invoice_id: invoiceId,
-        match_type: matchType || 'manual',
-        match_score: matchScore !== undefined ? matchScore : 100,
-        matched_by_user_id: userId,
-        notes: notes || null
-      })
+      .insert(insertData)
       .select(`
         *,
         invoice:invoices (
@@ -58,6 +108,12 @@ export async function POST(request: NextRequest) {
           invoice_number,
           supplier_name,
           file_path
+        ),
+        supplier:suppliers (
+          id,
+          name,
+          vkn,
+          is_current_account
         )
       `)
       .single();

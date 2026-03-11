@@ -101,7 +101,7 @@ export async function generateContractPaymentPDF(data: ContractPaymentData): Pro
         margin: [0, 0, 0, 15]
       },
 
-      // TUTAR BİLGİSİ (VURGULU)
+      // TUTAR BİLGİSİ (VURGULU) 
       {
         text: amountStr,
         fontSize: 14,

@@ -216,9 +216,80 @@ export async function GET(
       };
     }
 
-    // Calculate net balance: outgoing (income) - incoming (expense) - informal (expense)
-    const netBalance = outgoingInvoiceStats.totalAmount - invoiceStats.totalAmount - informalPaymentStats.totalAmount;
-    console.log('Net balance:', netBalance, '(outgoing:', outgoingInvoiceStats.totalAmount, '- incoming:', invoiceStats.totalAmount, '- informal:', informalPaymentStats.totalAmount, ')');
+    // YENİ: Kredi kartı ödemelerini al (cari hesap için)
+    let cardPayments: any[] = [];
+    let cardPaymentStats = {
+      count: 0,
+      totalAmount: 0,
+    };
+
+    console.log('🔄 Supplier current account check:', {
+      supplierId,
+      name: supplier.name,
+      isCurrentAccount: supplier.is_current_account
+    });
+
+    if (supplier.is_current_account) {
+      console.log('🔄 Checking card payments for current account supplier:', supplierId);
+      
+      // A) Faturaya bağlı eşleştirmeler (eski yöntem)
+      const { data: cardPaymentsViaInvoice } = await supabase
+        .from('statement_invoice_matches')
+        .select(`
+          id,
+          matched_at,
+          statement_item:card_statement_items!inner(
+            id,
+            transaction_name,
+            amount,
+            transaction_date
+          ),
+          invoice:invoices!inner(
+            id,
+            supplier_id,
+            supplier_vkn,
+            supplier_name
+          )
+        `)
+        .or(`invoice.supplier_id.eq.${supplierId},invoice.supplier_vkn.eq.${supplier.vkn || 'NULL'},invoice.supplier_name.eq.${supplier.name}`)
+        .order('matched_at', { ascending: false });
+
+      // B) Doğrudan firmaya bağlı eşleştirmeler (YENİ: faturasız)
+      const { data: cardPaymentsViaSupplier } = await supabase
+        .from('statement_invoice_matches')
+        .select(`
+          id,
+          matched_at,
+          statement_item:card_statement_items!inner(
+            id,
+            transaction_name,
+            amount,
+            transaction_date
+          )
+        `)
+        .eq('supplier_id', supplierId)
+        .is('invoice_id', null)
+        .order('matched_at', { ascending: false });
+
+      cardPayments = [
+        ...(cardPaymentsViaInvoice || []),
+        ...(cardPaymentsViaSupplier || [])
+      ];
+
+      cardPaymentStats = {
+        count: cardPayments.length,
+        totalAmount: cardPayments.reduce((sum: number, match: any) => 
+          sum + (parseFloat(match.statement_item?.amount) || 0), 0),
+      };
+
+      console.log('🔄 Card payments found:', cardPaymentStats.count, 'Total:', cardPaymentStats.totalAmount);
+    }
+
+    // Bakiye: Giden faturalar (gelir) - Gelen faturalar (gider) - Kredi kartı ödemeleri
+    // Gayri resmi ödemeler bağımsız işlemdir, net bakiyeye dahil edilmez
+    const netBalance = outgoingInvoiceStats.totalAmount - invoiceStats.totalAmount - cardPaymentStats.totalAmount;
+    console.log('Net balance:', netBalance, '(outgoing:', outgoingInvoiceStats.totalAmount, '- incoming:', invoiceStats.totalAmount, '- cardPayments:', cardPaymentStats.totalAmount, ')');
+    console.log('NOTE: Informal payments (', informalPaymentStats.totalAmount, ') are standalone, not in net balance');
 
     // Calculate grand total (all transactions)
     const grandTotal = invoiceStats.totalAmount + informalPaymentStats.totalAmount + outgoingInvoiceStats.totalAmount;
@@ -261,12 +332,22 @@ export async function GET(
     }
 
     // Monthly transaction data (incoming = expense, outgoing = income, excluding rejected)
-    const monthlyData = new Map<string, { incomingInvoices: number; outgoingInvoices: number; informalPayments: number }>();
+    const monthlyData = new Map<string, { 
+      incomingInvoices: number; 
+      outgoingInvoices: number; 
+      informalPayments: number;
+      cardPayments: number; // YENİ 
+    }>();
 
     // Incoming invoices (expenses - we pay them, exclude rejected)
     validInvoices.forEach((inv: any) => {
       const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
-      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+      const current = monthlyData.get(month) || { 
+        incomingInvoices: 0, 
+        outgoingInvoices: 0, 
+        informalPayments: 0,
+        cardPayments: 0 
+      };
       current.incomingInvoices += parseFloat(inv.amount) || 0;
       monthlyData.set(month, current);
     });
@@ -274,7 +355,12 @@ export async function GET(
     // Outgoing invoices (income - they pay us)
     outgoingInvoices?.forEach((inv: any) => {
       const month = new Date(inv.invoice_date).toISOString().substring(0, 7);
-      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+      const current = monthlyData.get(month) || { 
+        incomingInvoices: 0, 
+        outgoingInvoices: 0, 
+        informalPayments: 0,
+        cardPayments: 0 
+      };
       current.outgoingInvoices += parseFloat(inv.amount) || 0;
       monthlyData.set(month, current);
     });
@@ -282,8 +368,27 @@ export async function GET(
     // Informal payments (expenses)
     informalPayments?.forEach((pay: any) => {
       const month = new Date(pay.payment_date).toISOString().substring(0, 7);
-      const current = monthlyData.get(month) || { incomingInvoices: 0, outgoingInvoices: 0, informalPayments: 0 };
+      const current = monthlyData.get(month) || { 
+        incomingInvoices: 0, 
+        outgoingInvoices: 0, 
+        informalPayments: 0,
+        cardPayments: 0 
+      };
       current.informalPayments += parseFloat(pay.amount) || 0;
+      monthlyData.set(month, current);
+    });
+
+    // YENİ: Card payments (expenses - cari hesap için)
+    // Kredi kartı ekstrelerinde tutarlar negatif gelir (borçlandırma), Math.abs() ile pozitife çeviriyoruz
+    cardPayments?.forEach((match: any) => {
+      const month = new Date(match.statement_item.transaction_date).toISOString().substring(0, 7);
+      const current = monthlyData.get(month) || { 
+        incomingInvoices: 0, 
+        outgoingInvoices: 0, 
+        informalPayments: 0,
+        cardPayments: 0 
+      };
+      current.cardPayments += Math.abs(parseFloat(match.statement_item.amount) || 0);
       monthlyData.set(month, current);
     });
 
@@ -294,7 +399,11 @@ export async function GET(
         incomingInvoices: data.incomingInvoices,
         outgoingInvoices: data.outgoingInvoices,
         informalPayments: data.informalPayments,
-        netTotal: data.outgoingInvoices - data.incomingInvoices - data.informalPayments,
+        cardPayments: data.cardPayments,
+        // netTotal: faturalar - kredi kartı ödemeleri
+        // Gayri resmi ödemeler bağımsız işlemdir, netTotal'a dahil edilmez
+        // Pozitif = biz borçluyuz, Negatif = bakiyemiz var
+        netTotal: data.incomingInvoices - data.outgoingInvoices - data.cardPayments,
       }));
 
     return NextResponse.json({

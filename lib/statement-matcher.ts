@@ -758,6 +758,186 @@ export function calculateMatchStats(matchResults: Map<number, MatchResults>) {
 }
 
 // =====================================================
+// CURRENT ACCOUNT SUPPLIER MATCHING
+// =====================================================
+
+/**
+ * Kredi kartı ekstrelerinde işlem adında sıkça görülen konum/gürültü kelimeleri.
+ * Firma adı karşılaştırmasında bu kelimeler yok sayılır.
+ * Örnek: "NURAKS MOBİLYA İstanbul TR" → yalnızca ["nuraks", "mobilya"] karşılaştırılır.
+ */
+const LOCATION_NOISE_WORDS = new Set([
+  'istanbul', 'ankara', 'izmir', 'bursa', 'antalya', 'konya', 'adana',
+  'kocaeli', 'mersin', 'eskisehir', 'gaziantep', 'diyarbakir', 'samsun',
+  'tr', 'tur', 'turkey', 'turkiye', 'türkiye'
+]);
+
+/**
+ * Türkçe karakterleri ASCII eşdeğerlerine normalize eder.
+ * Hem ş→s hem de İ/I→i dönüşümleri yapılır.
+ */
+function normalizeTurkishForSupplier(s: string): string {
+  return s
+    .replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+    .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
+    .replace(/İ/g, 'i').replace(/I/g, 'i');
+}
+
+/**
+ * Cari hesap firma adı eşleşme skoru hesaplar (0-100).
+ *
+ * Kredi kartı ekstresi satırları genellikle firma adının kısaltmasıdır:
+ *   "NURAKS MOBİLYA İstanbul TR"  →  "NURAKS MOBİLYA AKSESUARLARI SANAYİ TİCARET LTD. ŞTİ."
+ *
+ * Algoritma: Coverage (işlem adındaki içerik kelimelerinin kaçı firma adında geçiyor?)
+ *   score = (eşleşen işlem kelimesi) / (toplam işlem kelimesi) × 100
+ *
+ * Jaccard yerine coverage kullanılır çünkü işlem adı firma adının kısaltmasıdır;
+ * firma adı daha uzun olduğu için Jaccard haksız düşük puan verir.
+ */
+function calculateCurrentAccountMatchScore(
+  transactionName: string,
+  supplierName: string
+): { score: number; reasons: string[] } {
+  // Kısa token listesi üret: min 3 karakter, stopword değil, konum kelimesi değil
+  const toCleanTokens = (text: string): string[] =>
+    text
+      .toLocaleLowerCase('tr')
+      .replace(/[^\wığöşüçÇĞİÖŞÜ\s]/g, ' ')
+      .split(/\s+/)
+      .map(s => s.trim())
+      .filter(
+        s => s.length >= 3
+          && !STOPWORDS.includes(s)
+          && !LOCATION_NOISE_WORDS.has(s)
+          && !LOCATION_NOISE_WORDS.has(normalizeTurkishForSupplier(s))
+      );
+
+  const transTokens = toCleanTokens(transactionName);
+  if (transTokens.length === 0) return { score: 0, reasons: [] };
+
+  const suppTokensArr = toCleanTokens(supplierName);
+  const suppSet = new Set(suppTokensArr);
+  const suppSetNorm = new Set(suppTokensArr.map(normalizeTurkishForSupplier));
+
+  let matches = 0;
+  const matchedWords: string[] = [];
+
+  for (const t of transTokens) {
+    const tNorm = normalizeTurkishForSupplier(t);
+
+    // 1. Tam eşleşme (Türkçe karakter varyasyonları dahil)
+    if (suppSet.has(t) || suppSetNorm.has(tNorm)) {
+      matches += 1.0;
+      matchedWords.push(t);
+      continue;
+    }
+
+    // 2. Prefix eşleşme: işlem kelimesi firma kelimesinin başı ise (min 4 karakter)
+    //    Örnek: "mobily" → "mobilya" veya "insaa" → "inşaat"
+    if (t.length >= 4) {
+      let found = false;
+      for (const st of suppTokensArr) {
+        if (st.startsWith(t) || normalizeTurkishForSupplier(st).startsWith(tNorm)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) {
+        matches += 0.8;
+        matchedWords.push(`${t}~`);
+        continue;
+      }
+    }
+  }
+
+  const score = Math.min(Math.round((matches / transTokens.length) * 100), 100);
+  const reasons: string[] = score > 0
+    ? [`İşlem kelimelerinin %${score}'ı eşleşti (${matchedWords.join(', ')})`]
+    : [];
+
+  return { score, reasons };
+}
+
+/** Cari hesap firma eşleşme sonucu */
+export interface SupplierMatchResult {
+  supplier: {
+    id: string;
+    name: string;
+    vkn?: string;
+    is_current_account: boolean;
+  };
+  matchScore: number;
+  /** current_account_auto: otomatik ata (≥70) | current_account_suggested: öneri göster (50-69) */
+  matchType: 'current_account_auto' | 'current_account_suggested';
+  reasons: string[];
+}
+
+/** Otomatik firma ataması için minimum skor — bu eşiğin üzerindekiler otomatik eşleştirilir */
+export const SUPPLIER_AUTO_MATCH_THRESHOLD = 70;
+/** Öneri göstermek için minimum skor */
+export const SUPPLIER_SUGGESTION_THRESHOLD = 50;
+
+/**
+ * Bir ekstre satırı için eşleşen cari hesap firmalarını bulur.
+ *
+ * Fatura eşleştirmesinden BAĞIMSIZ çalışır:
+ *  - Sadece is_current_account = true firmalar incelenir
+ *  - Tutar değil, işlem adı / firma adı benzerliği esas alınır
+ *  - "payment" tipindeki işlemler (borç ödemesi) atlanır
+ *
+ * @returns SupplierMatchResult[] azalan skor sıralamasıyla
+ */
+export async function findMatchingCurrentAccountSuppliers(
+  item: ParsedStatementItem,
+  companyId: string,
+  supabaseClient: any = supabase
+): Promise<SupplierMatchResult[]> {
+  // Borç ödemesi işlemleri fatura/firmaya bağlanamaz
+  if (item.transactionType === 'payment') {
+    return [];
+  }
+
+  const { data: suppliers, error } = await supabaseClient
+    .from('suppliers')
+    .select('id, name, vkn, is_current_account')
+    .eq('company_id', companyId)
+    .eq('is_current_account', true);
+
+  if (error || !suppliers || suppliers.length === 0) {
+    return [];
+  }
+
+  const results: SupplierMatchResult[] = [];
+
+  for (const supplier of suppliers) {
+    const { score, reasons } = calculateCurrentAccountMatchScore(
+      item.transactionName,
+      supplier.name
+    );
+
+    if (score >= SUPPLIER_SUGGESTION_THRESHOLD) {
+      results.push({
+        supplier,
+        matchScore: score,
+        matchType: score >= SUPPLIER_AUTO_MATCH_THRESHOLD
+          ? 'current_account_auto'
+          : 'current_account_suggested',
+        reasons
+      });
+    }
+  }
+
+  const sorted = results.sort((a, b) => b.matchScore - a.matchScore);
+
+  if (sorted.length > 0) {
+    console.log(`🏢 [SupplierMatch] "${item.transactionName}": en iyi → "${sorted[0].supplier.name}" (%${sorted[0].matchScore}, ${sorted[0].matchType})`);
+  }
+
+  return sorted;
+}
+
+// =====================================================
 // EXPORT FOR TESTING
 // =====================================================
 
@@ -771,5 +951,8 @@ export {
   STOPWORDS,
   AMOUNT_TOLERANCE,
   AUTO_MATCH_THRESHOLD,
-  SUGGESTION_THRESHOLD
+  SUGGESTION_THRESHOLD,
+  LOCATION_NOISE_WORDS,
+  calculateCurrentAccountMatchScore
 };
+

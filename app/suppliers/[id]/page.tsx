@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { supabase } from '@/lib/supabase/client';
+import { CurrentAccountBadge } from '@/components/suppliers/CurrentAccountBadge';
+import { CurrentAccountTable } from '@/components/suppliers/CurrentAccountTable';
+import { CurrentAccountSummaryCard } from '@/components/suppliers/CurrentAccountSummaryCard';
 
 interface SupplierSummary {
   supplier: any;
@@ -40,6 +43,7 @@ interface SupplierSummary {
     incomingInvoices: number;
     outgoingInvoices: number;
     informalPayments: number;
+    cardPayments: number; // YENİ: Kredi kartı ödemeleri
     netTotal: number;
   }[];
 }
@@ -53,6 +57,14 @@ export default function SupplierDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<SupplierSummary | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'incoming' | 'outgoing' | 'payments'>('all');
+
+  // Cari hesap state'leri
+  const [isCurrentAccount, setIsCurrentAccount] = useState(false);
+  const [currentAccountNotes, setCurrentAccountNotes] = useState('');
+  const [isUpdatingCurrentAccount, setIsUpdatingCurrentAccount] = useState(false);
+  const [currentAccountSummary, setCurrentAccountSummary] = useState<any>(null);
+  const [isLoadingCurrentAccount, setIsLoadingCurrentAccount] = useState(false);
+  const [showCurrentAccountSection, setShowCurrentAccountSection] = useState(false);
 
   useEffect(() => {
     if (supplierId) {
@@ -84,7 +96,20 @@ export default function SupplierDetailPage() {
 
       const data = await response.json();
       console.log('✅ [Supplier Detail] Data received:', data);
+      console.log('📊 [Supplier Detail] Monthly Summary:', data.monthlySummary);
+      console.log('🔢 [Supplier Detail] Financial:', data.financial);
       setSummary(data);
+      
+      // Cari hesap durumunu set et
+      if (data.supplier) {
+        setIsCurrentAccount(data.supplier.is_current_account || false);
+        setCurrentAccountNotes(data.supplier.current_account_notes || '');
+        
+        // Eğer cari hesapsa, özet bilgilerini de yükle
+        if (data.supplier.is_current_account) {
+          loadCurrentAccountSummary();
+        }
+      }
     } catch (err: any) {
       console.error('❌ [Supplier Detail] Error:', err);
       setError(err.message);
@@ -108,6 +133,71 @@ export default function SupplierDetailPage() {
       day: 'numeric',
     });
   };
+
+  // Cari hesap özet bilgilerini yükle
+  async function loadCurrentAccountSummary() {
+    try {
+      setIsLoadingCurrentAccount(true);
+      const response = await fetch(`/api/suppliers/${supplierId}/current-account-summary`);
+      
+      if (!response.ok) {
+        throw new Error('Cari hesap bilgileri yüklenemedi');
+      }
+
+      const data = await response.json();
+      console.log('✅ [Current Account] Summary loaded:', data);
+      setCurrentAccountSummary(data);
+      setShowCurrentAccountSection(true);
+    } catch (err: any) {
+      console.error('❌ [Current Account] Error:', err);
+      alert('Cari hesap bilgileri yüklenirken hata oluştu');
+    } finally {
+      setIsLoadingCurrentAccount(false);
+    }
+  }
+
+  // Cari hesap durumunu değiştir
+  async function toggleCurrentAccount(enabled: boolean) {
+    try {
+      setIsUpdatingCurrentAccount(true);
+      
+      const response = await fetch(`/api/suppliers/${supplierId}/current-account`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          is_current_account: enabled,
+          current_account_notes: currentAccountNotes
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Güncelleme başarısız');
+      }
+
+      const result = await response.json();
+      console.log('✅ [Current Account] Updated:', result);
+      
+      setIsCurrentAccount(enabled);
+      
+      // Eğer aktif hale getirildiyse özet bilgilerini yükle
+      if (enabled) {
+        await loadCurrentAccountSummary();
+      } else {
+        setShowCurrentAccountSection(false);
+        setCurrentAccountSummary(null);
+      }
+      
+      alert(result.message);
+    } catch (err: any) {
+      console.error('❌ [Current Account] Update error:', err);
+      alert(`Hata: ${err.message}`);
+    } finally {
+      setIsUpdatingCurrentAccount(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -188,6 +278,7 @@ export default function SupplierDetailPage() {
               </h1>
               <div className="flex flex-wrap gap-3 items-center">
                 {getSupplierTypeBadge(supplier.supplier_type)}
+                <CurrentAccountBadge isCurrentAccount={isCurrentAccount} />
                 {supplier.vkn && (
                   <span className="text-sm text-gray-600 font-mono bg-gray-100 px-3 py-1 rounded-lg">
                     VKN: {supplier.vkn}
@@ -201,7 +292,83 @@ export default function SupplierDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Cari Hesap Toggle */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Cari Hesap Takibi</h3>
+                <p className="text-xs text-gray-600 mt-1">
+                  Parçalı ödemeler için firmayı cari hesap olarak işaretleyin
+                </p>
+              </div>
+              <button
+                onClick={() => toggleCurrentAccount(!isCurrentAccount)}
+                disabled={isUpdatingCurrentAccount}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  isCurrentAccount ? 'bg-blue-600' : 'bg-gray-300'
+                } ${isUpdatingCurrentAccount ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    isCurrentAccount ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Cari Hesap Notları */}
+            {isCurrentAccount && (
+              <div className="mb-4">
+                <label className="block text-xs font-medium text-gray-700 mb-2">
+                  Cari Hesap Notları (Opsiyonel)
+                </label>
+                <textarea
+                  value={currentAccountNotes}
+                  onChange={(e) => setCurrentAccountNotes(e.target.value)}
+                  onBlur={() => {
+                    // Notlar değiştiğinde otomatik kaydet
+                    if (isCurrentAccount) {
+                      toggleCurrentAccount(true);
+                    }
+                  }}
+                  placeholder="Bu firma neden cari hesap olarak takip ediliyor? (örn: Parçalı ödeme alıyor)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={2}
+                />
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Cari Hesap Özeti */}
+        {showCurrentAccountSection && currentAccountSummary && (
+          <div className="space-y-4">
+            <CurrentAccountSummaryCard
+              totalCardPayments={currentAccountSummary.totalCardPayments}
+              totalInformalPayments={currentAccountSummary.totalInformalPayments}
+              totalInvoices={currentAccountSummary.totalInvoices}
+              balance={currentAccountSummary.balance}
+              balanceStatus={currentAccountSummary.balanceStatus}
+              lastMovementDate={currentAccountSummary.lastMovementDate}
+              movementCount={currentAccountSummary.movements.length}
+            />
+
+            {currentAccountSummary.movements.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm p-4 md:p-6">
+                <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <span>📊</span> Cari Hesap Hareketleri
+                </h2>
+                <CurrentAccountTable
+                  movements={currentAccountSummary.movements}
+                  totalDebit={currentAccountSummary.totalInvoices}
+                  totalCredit={currentAccountSummary.totalCardPayments}
+                  finalBalance={currentAccountSummary.balance}
+                  isLoading={isLoadingCurrentAccount}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {hasIncoming && (
@@ -309,14 +476,17 @@ export default function SupplierDetailPage() {
               <span>📊</span> Aylık Özet
             </h2>
             <div className="space-y-4">
-              {monthlySummary.map(({ month, incomingInvoices, outgoingInvoices, informalPayments, netTotal }) => {
+              {monthlySummary.map(({ month, incomingInvoices, outgoingInvoices, informalPayments, cardPayments, netTotal }) => {
                 const maxValue = Math.max(
                   ...monthlySummary.map(m => 
                     Math.max(
-                      m.incomingInvoices + m.informalPayments,
-                      m.outgoingInvoices
+                      m.incomingInvoices,
+                      m.outgoingInvoices,
+                      m.informalPayments,
+                      m.cardPayments || 0
                     )
-                  )
+                  ),
+                  1 // sıfıra bölme önlemi
                 );
                 const [year, monthNum] = month.split('-');
                 const monthName = new Date(parseInt(year), parseInt(monthNum) - 1).toLocaleDateString('tr-TR', { 
@@ -328,8 +498,12 @@ export default function SupplierDetailPage() {
                   <div key={month} className="space-y-2">
                     <div className="flex justify-between items-center text-sm">
                       <span className="font-bold text-gray-800">{monthName}</span>
-                      <span className={`font-bold ${netTotal >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                        Net: {formatCurrency(netTotal)}
+                      <span className={`font-bold ${netTotal <= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {netTotal > 0
+                          ? `Borç: ${formatCurrency(netTotal)}`
+                          : netTotal < 0
+                            ? `Bakiye: ${formatCurrency(Math.abs(netTotal))}`
+                            : 'Dengede'}
                       </span>
                     </div>
                     
@@ -373,6 +547,21 @@ export default function SupplierDetailPage() {
                           <div
                             className="h-full bg-amber-600 transition-all"
                             style={{ width: `${(informalPayments / maxValue) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {cardPayments > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-purple-600">
+                          <span>💳 Kredi Kartı</span>
+                          <span>{formatCurrency(cardPayments)}</span>
+                        </div>
+                        <div className="h-6 bg-gray-100 rounded-lg overflow-hidden">
+                          <div
+                            className="h-full bg-purple-600 transition-all"
+                            style={{ width: `${(cardPayments / maxValue) * 100}%` }}
                           />
                         </div>
                       </div>

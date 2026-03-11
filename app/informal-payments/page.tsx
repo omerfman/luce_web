@@ -40,6 +40,15 @@ function InformalPaymentsContent() {
     paymentMethod: '',
   });
 
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState<{
+    field: 'date' | 'supplier' | 'project' | 'amount' | null;
+    direction: 'asc' | 'desc';
+  }>({
+    field: 'date',
+    direction: 'desc'
+  });
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -208,6 +217,42 @@ function InformalPaymentsContent() {
 
   const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
 
+  // Sorting handler
+  function handleSort(field: 'date' | 'supplier' | 'project' | 'amount') {
+    setSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  }
+
+  // Apply sorting
+  const sortedPayments = [...payments].sort((a, b) => {
+    if (!sortConfig.field) return 0;
+    
+    const direction = sortConfig.direction === 'asc' ? 1 : -1;
+    
+    switch (sortConfig.field) {
+      case 'date':
+        return direction * (new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime());
+      
+      case 'supplier':
+        const aSupplier = a.supplier?.name || '';
+        const bSupplier = b.supplier?.name || '';
+        return direction * aSupplier.localeCompare(bSupplier, 'tr');
+      
+      case 'project':
+        const aProject = a.project?.name || '';
+        const bProject = b.project?.name || '';
+        return direction * aProject.localeCompare(bProject, 'tr');
+      
+      case 'amount':
+        return direction * (Number(a.amount) - Number(b.amount));
+      
+      default:
+        return 0;
+    }
+  });
+
   // Get selected project name for display
   const selectedProject = projects.find((p) => p.id === filters.projectId);
   const pageTitle = selectedProject
@@ -215,10 +260,10 @@ function InformalPaymentsContent() {
     : 'Gayri Resmi Ödemeler';
 
   // Pagination calculations
-  const totalPages = Math.ceil(payments.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedPayments.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedPayments = payments.slice(startIndex, endIndex);
+  const paginatedPayments = sortedPayments.slice(startIndex, endIndex);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -233,7 +278,7 @@ function InformalPaymentsContent() {
   // Reset to page 1 when payments data changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [payments.length]);
+  }, [payments.length, sortConfig.field, sortConfig.direction]);
 
   return (
     <Sidebar>
@@ -412,6 +457,67 @@ function InformalPaymentsContent() {
             >
               Temizle
             </button>
+          </div>
+        </div>
+
+        {/* Sorting Controls */}
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-secondary-700">Sıralama</h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleSort('date')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'date'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                📅 Tarihe Göre
+                {sortConfig.field === 'date' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('supplier')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'supplier'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                👷 Taşerona Göre
+                {sortConfig.field === 'supplier' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('project')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'project'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                📁 Projeye Göre
+                {sortConfig.field === 'project' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => handleSort('amount')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  sortConfig.field === 'amount'
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
+                }`}
+              >
+                💰 Tutara Göre
+                {sortConfig.field === 'amount' && (
+                  <span className="ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -705,7 +811,7 @@ function InformalPaymentsContent() {
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
-                totalItems={payments.length}
+                totalItems={sortedPayments.length}
                 itemsPerPage={itemsPerPage}
                 onPageChange={handlePageChange}
                 onItemsPerPageChange={handleItemsPerPageChange}

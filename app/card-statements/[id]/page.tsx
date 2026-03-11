@@ -48,6 +48,12 @@ export default function StatementDetailPage() {
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
   const [isSearchingManually, setIsSearchingManually] = useState(false);
   const [isBulkMatching, setIsBulkMatching] = useState(false);
+  const [isRematchLoading, setIsRematchLoading] = useState(false);
+  
+  // Cari hesap manuel arama state'leri
+  const [searchSupplierQuery, setSearchSupplierQuery] = useState('');
+  const [manualSupplierResults, setManualSupplierResults] = useState<any[]>([]);
+  const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
   
   // Bulk matching progress tracking
   const [bulkMatchProgress, setBulkMatchProgress] = useState<{
@@ -66,6 +72,9 @@ export default function StatementDetailPage() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [assigningProject, setAssigningProject] = useState<{ [key: string]: boolean }>({});
+  
+  // Cari hesap firmaları state'i
+  const [currentAccountSuppliers, setCurrentAccountSuppliers] = useState<Set<string>>(new Set());
 
   // PDF açma fonksiyonu (faturalar sayfasındaki gibi)
   async function openInvoicePDF(filePath: string) {
@@ -102,6 +111,7 @@ export default function StatementDetailPage() {
       console.log('🔄 [CardStatement] Initial load triggered - userId:', userId, 'statementId:', statementId);
       loadDetail();
       loadProjects();
+      loadCurrentAccountSuppliers();
     }
   }, [userId, statementId]); // Use userId instead of user object to prevent re-renders
   
@@ -157,6 +167,24 @@ export default function StatementDetailPage() {
       console.error('Load projects error:', error);
     } finally {
       setIsLoadingProjects(false);
+    }
+  }
+  
+  // Cari hesap firmalarını yükle
+  async function loadCurrentAccountSuppliers() {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('is_current_account', true);
+      
+      if (error) throw error;
+      
+      const supplierIds = new Set(data?.map(s => s.id) || []);
+      setCurrentAccountSuppliers(supplierIds);
+      console.log('✅ [Current Account] Loaded suppliers:', supplierIds.size);
+    } catch (error) {
+      console.error('Load current account suppliers error:', error);
     }
   }
   
@@ -228,9 +256,29 @@ export default function StatementDetailPage() {
     }
   }
 
-  async function handleMatch(itemId: string, invoiceId: string, matchScore?: number, matchType?: string) {
+  async function handleMatch(itemId: string, invoiceId: string | null, matchScore?: number, matchType?: string, supplierId?: string) {
     try {
       const { data: { session } } = await (await import('@/lib/supabase/client')).supabase.auth.getSession();
+      
+      // Body oluştur
+      const body: any = {
+        statementItemId: itemId,
+        matchScore,
+        matchType
+      };
+
+      // Invoice veya supplier - en az biri olmalı
+      if (invoiceId) {
+        body.invoiceId = invoiceId;
+        body.notes = matchScore ? `Eşleştirme (Skor: %${Math.round(matchScore)})` : 'Manuel eşleştirme';
+      } else if (supplierId) {
+        body.supplierId = supplierId;
+        body.notes = matchScore 
+          ? `Cari hesap firmasına bağlandı (Skor: %${Math.round(matchScore)})` 
+          : 'Manuel cari hesap eşleştirmesi';
+      } else {
+        throw new Error('invoiceId veya supplierId gerekli');
+      }
       
       const response = await fetch('/api/card-statements/match', {
         method: 'POST',
@@ -238,13 +286,7 @@ export default function StatementDetailPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token}`
         },
-        body: JSON.stringify({
-          statementItemId: itemId,
-          invoiceId,
-          matchScore,
-          matchType,
-          notes: matchScore ? `Eşleştirme (Skor: %${Math.round(matchScore)})` : 'Manuel eşleştirme'
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -369,6 +411,93 @@ export default function StatementDetailPage() {
     }
   }
 
+  // Cari hesap firmalarını manuel arama
+  async function searchSuppliersManually(query: string) {
+    if (!query || query.trim().length < 2) {
+      setManualSupplierResults([]);
+      return;
+    }
+
+    setIsSearchingSuppliers(true);
+    try {
+      // Get company_id for the search
+      const { data: userData } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', user!.id)
+        .single();
+
+      if (!userData) return;
+
+      // Sadece cari hesap firmalarında ara
+      const { data: suppliers, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .eq('company_id', userData.company_id)
+        .eq('is_current_account', true)
+        .or(`name.ilike.%${query}%,vkn.ilike.%${query}%`)
+        .order('name')
+        .limit(20);
+
+      if (error) {
+        console.error('Supplier search error:', error);
+        return;
+      }
+
+      console.log(`🔍 Cari hesap firma araması: "${query}" için ${suppliers?.length || 0} sonuç bulundu`);
+      setManualSupplierResults(suppliers || []);
+    } catch (error) {
+      console.error('Manual supplier search error:', error);
+    } finally {
+      setIsSearchingSuppliers(false);
+    }
+  }
+
+  /**
+   * Cari hesap otomatik eşleştirme: sunucu taraflı rematch endpoint'ini çağırır.
+   * Eşleşmemiş işlemleri hem fatura hem de cari hesap firma eşleştirmesiyle tarar.
+   */
+  async function handleCurrentAccountRematch() {
+    if (!confirm('Eşleşmemiş işlemler için cari hesap firmaları otomatik olarak taranacak. Devam edilsin mi?')) {
+      return;
+    }
+
+    setIsRematchLoading(true);
+    try {
+      const { data: { session } } = await (await import('@/lib/supabase/client')).supabase.auth.getSession();
+
+      const response = await fetch(`/api/card-statements/${statementId}/rematch`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Eşleştirme başarısız');
+      }
+
+      const msg = data.total === 0
+        ? '✅ Tüm işlemler zaten eşleştirilmiş, yeni eşleşme bulunamadı.'
+        : `✅ ${data.total} yeni eşleştirme yapıldı!\n\n` +
+          `📄 Fatura eşleşmesi: ${data.invoiceMatches}\n` +
+          `🏢 Cari hesap eşleşmesi: ${data.supplierMatches}\n` +
+          `🔍 Taranan: ${data.checked} işlem`;
+
+      alert(msg);
+
+      // Sayfayı yenile
+      await loadDetail();
+    } catch (error: any) {
+      console.error('Rematch error:', error);
+      alert(`❌ ${error.message}`);
+    } finally {
+      setIsRematchLoading(false);
+    }
+  }
+
   async function handleBulkMatch(threshold: number) {
     if (!confirm(`%${threshold} ve üzeri skorlu eşleşmeleri otomatik kabul et. Daha düşük skorlar (%50+) öneri olarak kaydedilsin mi?`)) {
       return;
@@ -415,22 +544,22 @@ export default function StatementDetailPage() {
           const data = await response.json();
           
           // Tüm matches'leri birleştir (exact + suggested)
-          const allMatches = [
+          const allInvoiceMatches = [
             ...(data.exactMatches || []),
             ...(data.suggestedMatches || [])
           ];
+          const allSupplierMatches: any[] = data.currentAccountSuppliers || [];
 
-          // En yüksek skorlu match'i bul
-          const bestMatch = allMatches
+          // En yüksek skorlu fatura eşleşmesi
+          const bestInvoiceMatch = allInvoiceMatches
             .sort((a, b) => b.matchScore - a.matchScore)[0];
 
-          if (!bestMatch) {
-            // Hiç öneri yoksa devam et
-            continue;
-          }
+          // En yüksek skorlu cari hesap eşleşmesi
+          const bestSupplierMatch = allSupplierMatches
+            .sort((a: any, b: any) => b.matchScore - a.matchScore)[0];
 
-          // Threshold üzerindeyse eşleştir
-          if (bestMatch.matchScore >= threshold) {
+          // Fatura eşleşmesi threshold'u geçiyorsa öncelik ver
+          if (bestInvoiceMatch && bestInvoiceMatch.matchScore >= threshold) {
             const matchResponse = await fetch('/api/card-statements/match', {
               method: 'POST',
               headers: {
@@ -439,31 +568,46 @@ export default function StatementDetailPage() {
               },
               body: JSON.stringify({
                 statementItemId: item.id,
-                invoiceId: bestMatch.invoice.id,
-                matchScore: Math.round(bestMatch.matchScore),
-                matchType: bestMatch.matchType,
-                notes: `Otomatik eşleştirme (%${threshold} threshold, skor: ${Math.round(bestMatch.matchScore)})`
+                invoiceId: bestInvoiceMatch.invoice.id,
+                matchScore: Math.round(bestInvoiceMatch.matchScore),
+                matchType: bestInvoiceMatch.matchType,
+                notes: `Otomatik eşleştirme (%${threshold} threshold, skor: ${Math.round(bestInvoiceMatch.matchScore)})`
               })
             });
 
             if (matchResponse.ok) {
               matchedCount++;
-              console.log(`✅ Matched item ${item.id} with invoice ${bestMatch.invoice.id} (score: ${Math.round(bestMatch.matchScore)})`);
+              console.log(`✅ Fatura eşleşti: ${item.id} → ${bestInvoiceMatch.invoice.id} (skor: ${Math.round(bestInvoiceMatch.matchScore)})`);
             } else {
               failedCount++;
-              console.error(`Failed to match item ${item.id}`);
             }
-            
-            // Update progress
-            setBulkMatchProgress(prev => prev ? {
-              ...prev,
-              current: i + 1,
-              matched: matchedCount,
-              failed: failedCount
-            } : null);
-          } 
-          // Threshold altında ama %50+ ise öneri olarak kaydet
-          else if (bestMatch.matchScore >= 50) {
+          }
+          // Fatura yok ama cari hesap eşleşmesi threshold'u geçiyorsa
+          else if (bestSupplierMatch && bestSupplierMatch.matchScore >= threshold) {
+            const matchResponse = await fetch('/api/card-statements/match', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+              },
+              body: JSON.stringify({
+                statementItemId: item.id,
+                supplierId: bestSupplierMatch.supplier.id,
+                matchScore: Math.round(bestSupplierMatch.matchScore),
+                matchType: bestSupplierMatch.matchType,
+                notes: `Cari hesap eşleştirme (%${threshold} threshold, skor: ${Math.round(bestSupplierMatch.matchScore)})`
+              })
+            });
+
+            if (matchResponse.ok) {
+              matchedCount++;
+              console.log(`🏢 Cari eşleşti: ${item.id} → ${bestSupplierMatch.supplier.name} (skor: ${Math.round(bestSupplierMatch.matchScore)})`);
+            } else {
+              failedCount++;
+            }
+          }
+          // Threshold altında ama %50+ ise öneri olarak kaydet (sadece fatura önerileri için)
+          else if (bestInvoiceMatch && bestInvoiceMatch.matchScore >= 50) {
             const saveSuggestionResponse = await fetch(`/api/card-statements/${item.id}/save-suggestion`, {
               method: 'POST',
               headers: {
@@ -471,13 +615,13 @@ export default function StatementDetailPage() {
                 'Authorization': `Bearer ${session?.access_token}`
               },
               body: JSON.stringify({
-                matchConfidence: Math.round(bestMatch.matchScore)
+                matchConfidence: Math.round(bestInvoiceMatch.matchScore)
               })
             });
 
             if (saveSuggestionResponse.ok) {
               savedSuggestionsCount++;
-              console.log(`💡 Saved suggestion for item ${item.id} (score: ${Math.round(bestMatch.matchScore)})`);
+              console.log(`💡 Saved suggestion for item ${item.id} (score: ${Math.round(bestInvoiceMatch.matchScore)})`);
             } else {
               console.error(`Failed to save suggestion for item ${item.id}`);
             }
@@ -1255,6 +1399,29 @@ export default function StatementDetailPage() {
                 </Button>
               </div>
               </div>
+
+              {/* Cari Hesap Otomatik Eşleştirme */}
+              <div className="mt-2 pt-2 border-t border-blue-200 flex flex-col sm:flex-row sm:items-center gap-2">
+                <p className="text-xs text-blue-700 flex-1">
+                  Eşleşmemiş işlemleri cari hesap firmalarıyla otomatik eşleştir
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCurrentAccountRematch}
+                  disabled={isRematchLoading || isBulkMatching || stats.noMatch === 0}
+                  className="border-purple-300 bg-white hover:bg-purple-50 text-purple-700 text-xs"
+                >
+                  {isRematchLoading ? (
+                    <>
+                      <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2"></div>
+                      Taranıyor...
+                    </>
+                  ) : (
+                    <>🏢 Cari Hesap Eşleştir</>
+                  )}
+                </Button>
+              </div>
             
             {/* Progress Bar */}
             {bulkMatchProgress && (
@@ -1398,6 +1565,119 @@ export default function StatementDetailPage() {
               </div>
             ) : suggestions ? (
               <div className="space-y-4">
+                {/* Cari Hesap Uyarısı */}
+                {(() => {
+                  // Önerilerdeki tüm invoice'ları topla
+                  const allInvoices = [
+                    ...(suggestions.exactMatches || []),
+                    ...(suggestions.suggestedMatches || [])
+                  ];
+                  
+                  // Cari hesap olan supplier'ları bul
+                  const currentAccountInvoices = allInvoices.filter((match: any) => 
+                    match.invoice?.supplier_id && currentAccountSuppliers.has(match.invoice.supplier_id)
+                  );
+                  
+                  if (currentAccountInvoices.length > 0) {
+                    const uniqueSuppliers = new Set(
+                      currentAccountInvoices.map((match: any) => match.invoice.supplier_name)
+                    );
+                    
+                    return (
+                      <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="text-blue-600 text-2xl">🔄</div>
+                          <div className="flex-1">
+                            <h4 className="font-bold text-blue-900 mb-1">
+                              Cari Hesap Firması Tespit Edildi
+                            </h4>
+                            <p className="text-sm text-blue-800 mb-2">
+                              Bu firma(lar) cari hesap olarak işaretli: 
+                              <span className="font-semibold"> {Array.from(uniqueSuppliers).join(', ')}</span>
+                            </p>
+                            <p className="text-xs text-blue-700">
+                              ℹ️ Cari hesap firmalarında ödemeler ve faturalar <strong>topluca</strong> değerlendirilir. 
+                              Parçalı ödemeler yapılan firmalarda birebir eşleştirme yerine, toplam ödeme ve toplam fatura tutarları karşılaştırılır.
+                            </p>
+                            <button
+                              onClick={() => {
+                                const supplierId = currentAccountInvoices[0]?.invoice?.supplier_id;
+                                if (supplierId) {
+                                  window.open(`/suppliers/${supplierId}`, '_blank');
+                                }
+                              }}
+                              className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium underline"
+                            >
+                              Cari Hesap Detayını Görüntüle →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                
+                {/* YENİ: Cari Hesap Firma Eşleşmeleri */}
+                {suggestions.currentAccountSuppliers?.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-purple-700 mb-1 flex items-center gap-2">
+                      🔄 Cari Hesap Firmaları ({suggestions.currentAccountSuppliers.length})
+                    </h3>
+                    <p className="text-xs text-gray-600 mb-2">
+                      Bu firmalar cari hesap olarak işaretli. Fatura olmadan doğrudan firmaya bağlayabilirsiniz.
+                    </p>
+                    <div className="space-y-2">
+                      {suggestions.currentAccountSuppliers.map((match: any) => (
+                        <Card key={match.supplier.id} className="border-purple-200 bg-purple-50">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-lg flex items-center gap-2">
+                                {match.supplier.name}
+                                <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full">Cari Hesap</span>
+                              </div>
+                              {match.supplier.vkn && (
+                                <div className="text-xs text-gray-600 mt-1 font-mono">
+                                  VKN: {match.supplier.vkn}
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-500 mt-1">
+                                Skor: <span className="font-bold text-purple-600">%{Math.round(match.matchScore)}</span> | 
+                                {' '}{match.reasons.join(', ')}
+                              </div>
+                              <div className="text-xs text-purple-700 mt-2 bg-purple-100 p-2 rounded">
+                                ⓘ Bu eşleştirme fatura gerektirmez. Ödeme doğrudan firmanın cari hesabına eklenir.
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => window.open(`/suppliers/${match.supplier.id}`, '_blank')}
+                                className="flex-shrink-0 p-2 text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                                title="Firma Detayı"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </button>
+                              <Button
+                                size="sm"
+                                className="bg-purple-600 hover:bg-purple-700"
+                                onClick={() => {
+                                  if (selectedItem) {
+                                    handleMatch(selectedItem.id, null, match.matchScore, match.matchType, match.supplier.id);
+                                  }
+                                }}
+                              >
+                                Firmaya Bağla
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {suggestions.exactMatches?.length > 0 && (
                   <div>
                     <h3 className="text-sm font-medium text-green-700 mb-1">
@@ -1472,8 +1752,7 @@ export default function StatementDetailPage() {
                                 <span className="font-medium ml-2">Tarih:</span> {formatDate(match.invoice.invoice_date || match.invoice.created_at)}
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
-                                Skor: <span className="font-bold text-yellow-600">%{Math.round(match.matchScore)}</span> | 
-                                {' '}{match.reasons.join(', ')}
+                                Eşleşme Skoru: %{match.matchScore.toFixed(0)} | Sebep: {match.reason}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -1491,7 +1770,12 @@ export default function StatementDetailPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleMatch(selectedItem.id, match.invoice.id, match.matchScore, match.matchType)}
+                                className="border-yellow-600 text-yellow-700 hover:bg-yellow-50"
+                                onClick={() => {
+                                  if (selectedItem) {
+                                    handleMatch(selectedItem.id, match.invoice.id, match.matchScore, 'suggested');
+                                  }
+                                }}
                               >
                                 Eşleştir
                               </Button>
@@ -1502,85 +1786,160 @@ export default function StatementDetailPage() {
                     </div>
                   </div>
                 )}
-
-                {suggestions.noMatch && (
-                  <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
-                    <p className="text-gray-700 font-medium mb-1">❌ Eşleşen fatura bulunamadı</p>
-                    <p className="text-sm text-gray-500">Tutar ile yakın veya isimde benzerlik olan fatura yok.</p>
-                    <p className="text-sm text-gray-500 mt-2">Manuel arama yapabilir veya önce faturayı sisteme yükleyebilirsiniz.</p>
-                  </div>
-                )}
               </div>
             ) : null}
 
-            {/* Manual Search */}
+            {/* Manuel Arama Bölümü */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <h3 className="text-sm font-medium text-gray-700 mb-2 mt-6">
                 Manuel Arama
-              </label>
-              <Input
-                type="text"
-                placeholder="Fatura numarası veya tedarikçi adı..."
-                value={searchInvoiceQuery}
-                onChange={(e) => {
-                  setSearchInvoiceQuery(e.target.value);
-                  searchInvoicesManually(e.target.value);
-                }}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                {isSearchingManually ? 'Aranıyor...' : 'Tüm eşleşmemiş faturalarda arama yapılır'}
-              </p>
+              </h3>
 
-              {/* Manual Search Results */}
-              {searchInvoiceQuery && manualSearchResults.length > 0 && (
-                <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
-                  {manualSearchResults.map((invoice) => (
-                    <Card key={invoice.id} className="border-blue-200">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="font-medium text-lg">{invoice.supplier_name || 'Bilinmeyen Tedarikçi'}</div>
-                          <div className="text-sm text-gray-600 mt-1">
-                            <span className="font-medium">Fatura No:</span> {invoice.invoice_number || '-'}
+              <div className="space-y-4">
+                {/* Fatura Arama */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fatura Ara
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Fatura numarası veya tedarikçi adı..."
+                  value={searchInvoiceQuery}
+                  onChange={(e) => {
+                    setSearchInvoiceQuery(e.target.value);
+                    searchInvoicesManually(e.target.value);
+                  }}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {isSearchingManually ? 'Aranıyor...' : 'Tüm faturalarda arama yapılır'}
+                </p>
+
+                {/* Manual Search Results */}
+                {searchInvoiceQuery && manualSearchResults.length > 0 && (
+                  <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                    {manualSearchResults.map((invoice) => (
+                      <Card key={invoice.id} className="border-blue-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="font-medium text-lg">{invoice.supplier_name || 'Bilinmeyen Tedarikçi'}</div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              <span className="font-medium">Fatura No:</span> {invoice.invoice_number || '-'}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              <span className="font-medium">Tutar:</span> {formatCurrency(invoice.amount)} | 
+                              <span className="font-medium ml-2">Tarih:</span> {formatDate(invoice.invoice_date || invoice.created_at)}
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium">Tutar:</span> {formatCurrency(invoice.amount)} | 
-                            <span className="font-medium ml-2">Tarih:</span> {formatDate(invoice.invoice_date || invoice.created_at)}
+                          <div className="flex items-center gap-2">
+                            {invoice.file_path && (
+                              <button
+                                onClick={() => openInvoicePDF(invoice.file_path)}
+                                className="flex-shrink-0 p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="PDF'i Aç"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </button>
+                            )}
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                if (selectedItem) {
+                                  handleMatch(selectedItem.id, invoice.id, undefined, 'manual');
+                                }
+                              }}
+                            >
+                              Eşleştir
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {invoice.file_path && (
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {searchInvoiceQuery && !isSearchingManually && manualSearchResults.length === 0 && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    Sonuç bulunamadı
+                  </p>
+                )}
+                </div>
+
+                {/* YENİ: Cari Hesap Firma Arama */}
+                <div className="pt-4 border-t border-gray-200">
+                <label className="block text-sm font-medium text-purple-700 mb-2">
+                  🔄 Cari Hesap Firması Ara (Faturasız Bağlama)
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Firma adı veya VKN..."
+                  value={searchSupplierQuery}
+                  onChange={(e) => {
+                    setSearchSupplierQuery(e.target.value);
+                    searchSuppliersManually(e.target.value);
+                  }}
+                  className="border-purple-300 focus:ring-purple-500"
+                />
+                <p className="mt-1 text-xs text-purple-600">
+                  {isSearchingSuppliers ? 'Aranıyor...' : 'Sadece cari hesap firmalarında arama yapar'}
+                </p>
+
+                {/* Manual Supplier Search Results */}
+                {searchSupplierQuery && manualSupplierResults.length > 0 && (
+                  <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                    {manualSupplierResults.map((supplier) => (
+                      <Card key={supplier.id} className="border-purple-200 bg-purple-50">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="font-medium text-lg flex items-center gap-2">
+                              {supplier.name}
+                              <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full">Cari Hesap</span>
+                            </div>
+                            {supplier.vkn && (
+                              <div className="text-xs text-gray-600 mt-1 font-mono">
+                                VKN: {supplier.vkn}
+                              </div>
+                            )}
+                            <div className="text-xs text-purple-700 mt-2">
+                              ⓘ Bu eşleştirme fatura gerektirmez
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <button
-                              onClick={() => openInvoicePDF(invoice.file_path)}
-                              className="flex-shrink-0 p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                              title="PDF'i Aç"
+                              onClick={() => window.open(`/suppliers/${supplier.id}`, '_blank')}
+                              className="flex-shrink-0 p-2 text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                              title="Firma Detayı"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                             </button>
-                          )}
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              if (selectedItem) {
-                                handleMatch(selectedItem.id, invoice.id, undefined, 'manual');
-                              }
-                            }}
-                          >
-                            Eşleştir
-                          </Button>
+                            <Button
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700"
+                              onClick={() => {
+                                if (selectedItem) {
+                                  handleMatch(selectedItem.id, null, undefined, 'manual', supplier.id);
+                                }
+                              }}
+                            >
+                              Firmaya Bağla
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                      </Card>
+                    ))}
+                  </div>
+                )}
 
-              {searchInvoiceQuery && !isSearchingManually && manualSearchResults.length === 0 && (
-                <p className="mt-2 text-sm text-gray-500">
-                  Sonuç bulunamadı
-                </p>
-              )}
+                {searchSupplierQuery && !isSearchingSuppliers && manualSupplierResults.length === 0 && (
+                  <p className="mt-2 text-sm text-purple-500">
+                    Cari hesap firması bulunamadı
+                  </p>
+                )}
+                </div>
+              </div>
             </div>
           </div>
         )}
