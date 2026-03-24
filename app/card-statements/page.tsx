@@ -324,7 +324,7 @@ export default function CardStatementsPage() {
           ) : filteredStatements.length === 0 ? (
             <Card className="text-center py-12">
               <p className="text-gray-500 mb-4">
-                {searchQuery || cardFilter ? 'canCreate && Arama kriterlerine uygun ekstre bulunamadı' : 'Henüz ekstre yüklenmemiş'}
+                {searchQuery || cardFilter ? 'Arama kriterlerine uygun ekstre bulunamadı' : 'Henüz ekstre yüklenmemiş'}
               </p>
               {!searchQuery && !cardFilter && (
                 <Button onClick={() => setIsUploadModalOpen(true)}>
@@ -336,14 +336,30 @@ export default function CardStatementsPage() {
             <div className="grid gap-3">
               {filteredStatements.map((stmt: any) => {
                 const matchPercentage = stmt.match_percentage || 0;
-                const matchColor = matchPercentage >= 80 ? 'text-green-600' : 
-                                  matchPercentage >= 50 ? 'text-yellow-600' : 'text-red-600';
-                
+                const total = stmt.total_transactions || 0;
+                const matched = stmt.matched_count || 0;
+                const pettyCash = stmt.petty_cash_count || 0;
+                const verified = stmt.verified_count || 0;
+                const remaining = stmt.remaining_count ?? Math.max(0, total - matched - pettyCash);
+
+                // İlerleme çubuğu için yüzdeler
+                const matchedPct = total > 0 ? (matched / total) * 100 : 0;
+                const pettyCashPct = total > 0 ? (pettyCash / total) * 100 : 0;
+                const remainingPct = total > 0 ? (remaining / total) * 100 : 0;
+
+                // Tamamlanma rengi
+                const completionColor = matchPercentage >= 80
+                  ? 'text-green-600'
+                  : matchPercentage >= 50
+                  ? 'text-yellow-600'
+                  : 'text-red-600';
+
                 return (
                   <Card key={stmt.id} className="hover:shadow-lg transition-shadow" padding="sm">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        {/* Başlık satırı */}
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <h3 className="text-base font-semibold text-gray-900 truncate">
                             {stmt.file_name}
                           </h3>
@@ -352,47 +368,94 @@ export default function CardStatementsPage() {
                               ****{stmt.card_last_four}
                             </span>
                           )}
+                          {remaining === 0 && total > 0 && (
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">
+                              ✓ Tamamlandı
+                            </span>
+                          )}
                         </div>
-                        
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+
+                        {/* Meta bilgiler */}
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 text-xs mb-3">
                           <div>
                             <span className="text-gray-500">Dönem:</span>
-                            <span className="ml-2 font-medium">
-                              {stmt.statement_month 
+                            <span className="ml-1.5 font-medium">
+                              {stmt.statement_month
                                 ? new Date(stmt.statement_month).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' })
                                 : '-'}
                             </span>
                           </div>
-                          
                           <div>
-                            <span className="text-gray-500">İşlem:</span>
-                            <span className="ml-2 font-medium">{stmt.total_transactions}</span>
+                            <span className="text-gray-500">Toplam İşlem:</span>
+                            <span className="ml-1.5 font-medium">{total}</span>
                           </div>
-                          
                           <div>
-                            <span className="text-gray-500">Toplam:</span>
-                            <span className="ml-2 font-medium">{formatCurrency(stmt.total_amount)}</span>
-                          </div>
-                          
-                          <div>
-                            <span className="text-gray-500">Eşleşme:</span>
-                            <span className={`ml-2 font-bold ${matchColor}`}>
-                              {stmt.matched_count}/{stmt.total_transactions} (%{matchPercentage})
-                            </span>
+                            <span className="text-gray-500">Tutar:</span>
+                            <span className="ml-1.5 font-medium">{formatCurrency(stmt.total_amount)}</span>
                           </div>
                         </div>
-                        
+
+                        {/* İstatistik pilleri */}
+                        <div className="flex flex-wrap gap-2 mb-2.5">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 border border-green-200 rounded-full text-xs">
+                            <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                            <span className="text-gray-600">Eşleşti:</span>
+                            <span className={`font-bold ${completionColor}`}>
+                              {matched}/{total}
+                            </span>
+                            <span className={`font-semibold ${completionColor}`}>(%{matchPercentage})</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs">
+                            <span className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"></span>
+                            <span className="text-gray-600">Kasa Fişi:</span>
+                            <span className="font-bold text-purple-700">{pettyCash}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-full text-xs">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+                            <span className="text-gray-600">Onaylanan:</span>
+                            <span className="font-bold text-blue-700">{verified}</span>
+                          </div>
+
+                          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${remaining > 0 ? 'bg-red-50 border border-red-200' : 'bg-gray-50 border border-gray-200'}`}>
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${remaining > 0 ? 'bg-red-500' : 'bg-gray-400'}`}></span>
+                            <span className="text-gray-600">Kalan:</span>
+                            <span className={`font-bold ${remaining > 0 ? 'text-red-600' : 'text-gray-500'}`}>{remaining}</span>
+                          </div>
+                        </div>
+
+                        {/* İlerleme çubuğu */}
+                        {total > 0 && (
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2 overflow-hidden flex">
+                            <div
+                              className="bg-green-500 h-full transition-all"
+                              style={{ width: `${matchedPct}%` }}
+                              title={`Eşleşti: ${matched}`}
+                            />
+                            <div
+                              className="bg-purple-400 h-full transition-all"
+                              style={{ width: `${pettyCashPct}%` }}
+                              title={`Kasa Fişi: ${pettyCash}`}
+                            />
+                            <div
+                              className="bg-red-300 h-full transition-all"
+                              style={{ width: `${remainingPct}%` }}
+                              title={`Kalan: ${remaining}`}
+                            />
+                          </div>
+                        )}
+
                         {stmt.card_holder_name && (
-                          <p className="mt-1.5 text-xs text-gray-600">
+                          <p className="text-xs text-gray-600">
                             Kart Sahibi: {stmt.card_holder_name}
                           </p>
                         )}
-                        
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-0.5 text-xs text-gray-400">
                           Yüklenme: {formatDate(stmt.uploaded_at)}
                         </p>
                       </div>
-                      
+
                       <div className="flex gap-2 flex-shrink-0">
                         <Button
                           size="sm"
@@ -402,7 +465,7 @@ export default function CardStatementsPage() {
                         >
                           Detay
                         </Button>
-                        
+
                         {canDelete && (
                           <Button
                             size="sm"

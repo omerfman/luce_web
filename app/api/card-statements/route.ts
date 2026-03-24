@@ -82,13 +82,43 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Calculate match percentages
-    const statementsWithStats = statements.map(stmt => ({
-      ...stmt,
-      match_percentage: stmt.total_transactions > 0
-        ? Math.round((stmt.matched_count / stmt.total_transactions) * 100)
-        : 0
-    }));
+    // Fetch item-level stats (kasa fişi, verified) in bulk to avoid N+1
+    const statementIds = statements.map((s: any) => s.id);
+    let itemCountMap: Record<string, { petty_cash_count: number; verified_count: number }> = {};
+
+    if (statementIds.length > 0) {
+      const { data: items } = await supabaseAdmin
+        .from('card_statement_items')
+        .select('statement_id, is_matched, is_verified, project_id, transaction_type')
+        .in('statement_id', statementIds);
+
+      for (const item of items || []) {
+        if (!itemCountMap[item.statement_id]) {
+          itemCountMap[item.statement_id] = { petty_cash_count: 0, verified_count: 0 };
+        }
+        const isPettyCash = !item.is_matched && item.project_id && item.transaction_type !== 'payment';
+        if (isPettyCash) itemCountMap[item.statement_id].petty_cash_count++;
+        if (item.is_verified) itemCountMap[item.statement_id].verified_count++;
+      }
+    }
+
+    // Calculate match percentages and extra stats
+    const statementsWithStats = statements.map((stmt: any) => {
+      const extra = itemCountMap[stmt.id] || { petty_cash_count: 0, verified_count: 0 };
+      const remaining = Math.max(
+        0,
+        stmt.total_transactions - stmt.matched_count - extra.petty_cash_count
+      );
+      return {
+        ...stmt,
+        match_percentage: stmt.total_transactions > 0
+          ? Math.round((stmt.matched_count / stmt.total_transactions) * 100)
+          : 0,
+        petty_cash_count: extra.petty_cash_count,
+        verified_count: extra.verified_count,
+        remaining_count: remaining,
+      };
+    });
 
     return NextResponse.json({
       statements: statementsWithStats,
