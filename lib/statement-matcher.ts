@@ -16,6 +16,12 @@
 import { supabase } from './supabase/client';
 import type { ParsedStatementItem } from './excel-parser';
 
+/** Ayrıntılı eşleştirme logları — varsayılan kapalı; .env.local: STATEMENT_MATCHER_VERBOSE=true */
+const STATEMENT_MATCHER_VERBOSE = process.env.STATEMENT_MATCHER_VERBOSE === 'true';
+function matcherDebug(...args: unknown[]) {
+  if (STATEMENT_MATCHER_VERBOSE) console.log(...args);
+}
+
 // =====================================================
 // TYPE DEFINITIONS
 // =====================================================
@@ -123,14 +129,14 @@ function getMatchingAmount(item: ParsedStatementItem): number {
   if (item.isInstallment) {
     // 1. Toplam tutar belli ise (Denizbank formatı)
     if (item.installmentTotalAmount && item.installmentTotalAmount > 0) {
-      console.log(`    💰 Installment with total: ${absAmount} TL (${item.installmentCurrent}/${item.installmentTotal}) → Total: ${item.installmentTotalAmount} TL`);
+      matcherDebug(`    💰 Installment with total: ${absAmount} TL (${item.installmentCurrent}/${item.installmentTotal}) → Total: ${item.installmentTotalAmount} TL`);
       return item.installmentTotalAmount;
     }
     
     // 2. Yoksa hesapla (tek taksit × toplam taksit sayısı)
     if (item.installmentTotal && item.installmentTotal > 0) {
       const calculatedTotal = absAmount * item.installmentTotal;
-      console.log(`    💰 Installment calculated: ${absAmount} TL × ${item.installmentTotal} = ${calculatedTotal} TL`);
+      matcherDebug(`    💰 Installment calculated: ${absAmount} TL × ${item.installmentTotal} = ${calculatedTotal} TL`);
       return calculatedTotal;
     }
   }
@@ -439,7 +445,7 @@ function calculateMatchScore(
       invoice.supplier_name
     );
     
-    console.log(`    🏢 Name comparison: "${item.transactionName}" vs "${invoice.supplier_name}" → similarity: ${nameSimilarity}%`);
+    matcherDebug(`    🏢 Name comparison: "${item.transactionName}" vs "${invoice.supplier_name}" → similarity: ${nameSimilarity}%`);
     
     const nameScore = Math.round(nameSimilarity * 0.4); // 0-40 arası
     score += nameScore;
@@ -458,7 +464,7 @@ function calculateMatchScore(
       reasons.push(dateScore.reason);
     }
     
-    console.log(`    📅 Date comparison: "${item.transactionDate}" vs "${invoice.invoice_date}" → score: ${dateScore.score}`);
+    matcherDebug(`    📅 Date comparison: "${item.transactionDate}" vs "${invoice.invoice_date}" → score: ${dateScore.score}`);
   }
   
   return { score: Math.min(score, 100), reasons };
@@ -543,7 +549,7 @@ async function checkInvoiceMatchStatus(
       return sum + Math.abs(match.card_statement_items.amount);
     }, 0);
     
-    console.log(`  📊 Invoice ${invoiceId} has ${matches.length} existing match(es), total matched: ${matchedAmount.toFixed(2)} TL`);
+    matcherDebug(`  📊 Invoice ${invoiceId} has ${matches.length} existing match(es), total matched: ${matchedAmount.toFixed(2)} TL`);
     
     // TUTAR KONTROLÜ (hem normal hem taksitli için aynı mantık):
     // Toplam eşleşmiş tutar + şu anki item tutarı <= fatura tutarı mı?
@@ -556,7 +562,7 @@ async function checkInvoiceMatchStatus(
         ? `Taksit eklenebilir (${matches.length} eşleşme zaten var, toplam: ${matchedAmount.toFixed(2)} TL)`
         : `Normal harcama eklenebilir (${matches.length} taksit zaten eşleşmiş, toplam: ${matchedAmount.toFixed(2)} TL)`;
       
-      console.log(`  ✅ Invoice ${invoiceId} CAN accept: matched=${matchedAmount.toFixed(2)}, current=${currentAmount.toFixed(2)}, total=${totalAfterMatch.toFixed(2)}, invoice=${invoiceAmount.toFixed(2)}`);
+      matcherDebug(`  ✅ Invoice ${invoiceId} CAN accept: matched=${matchedAmount.toFixed(2)}, current=${currentAmount.toFixed(2)}, total=${totalAfterMatch.toFixed(2)}, invoice=${invoiceAmount.toFixed(2)}`);
       
       return {
         isMatched: true,
@@ -565,7 +571,7 @@ async function checkInvoiceMatchStatus(
         reason
       };
     } else {
-      console.log(`  ⛔ Invoice ${invoiceId} is FULL: matched=${matchedAmount.toFixed(2)}, current=${currentAmount.toFixed(2)}, total=${totalAfterMatch.toFixed(2)} > invoice=${invoiceAmount.toFixed(2)}`);
+      matcherDebug(`  ⛔ Invoice ${invoiceId} is FULL: matched=${matchedAmount.toFixed(2)}, current=${currentAmount.toFixed(2)}, total=${totalAfterMatch.toFixed(2)} > invoice=${invoiceAmount.toFixed(2)}`);
       
       return {
         isMatched: true,
@@ -604,7 +610,7 @@ export async function findMatchingInvoices(
 ): Promise<MatchResults> {
   // Payment tipindeki işlemleri atla (borç ödemesi - faturada bulunamaz)
   if (item.transactionType === 'payment') {
-    console.log(`💳 Skipping payment transaction: ${item.transactionName}`);
+    matcherDebug(`💳 Skipping payment transaction: ${item.transactionName}`);
     return {
       exact: [],
       suggested: [],
@@ -619,7 +625,7 @@ export async function findMatchingInvoices(
     ? ` (${item.installmentCurrent}/${item.installmentTotal} taksit, toplam: ${matchingAmount} TL)`
     : '';
   
-  console.log(`🔍 Matching item: ${item.transactionName} - Amount: ${item.amount} → Matching: ${matchingAmount} TL${installmentInfo}`);
+  matcherDebug(`🔍 Matching item: ${item.transactionName} - Amount: ${item.amount} → Matching: ${matchingAmount} TL${installmentInfo}`);
   
   // 1. Tüm faturaları çek (TODO: Optimize et - sadece yakın tutarlarda olan)
   const { data: invoices, error } = await supabaseClient
@@ -634,7 +640,7 @@ export async function findMatchingInvoices(
     throw new Error('Faturalar yüklenirken hata oluştu');
   }
   
-  console.log(`📊 Found ${invoices?.length || 0} invoices in range [${matchingAmount - 100}, ${matchingAmount + 100}]`);
+  matcherDebug(`📊 Found ${invoices?.length || 0} invoices in range [${matchingAmount - 100}, ${matchingAmount + 100}]`);
   
   if (!invoices || invoices.length === 0) {
     return {
@@ -658,20 +664,20 @@ export async function findMatchingInvoices(
     
     // Eğer bu fatura eşleştirilemezse, atla
     if (!matchStatus.canMatch) {
-      console.log(`  ⏭️  Skipping invoice ${invoice.id}: ${matchStatus.reason}`);
+      matcherDebug(`  ⏭️  Skipping invoice ${invoice.id}: ${matchStatus.reason}`);
       continue;
     }
     
     const { score, reasons } = calculateMatchScore(item, invoice);
     
-    console.log(`  📋 Invoice ${invoice.id}: amount=${invoice.amount}, supplier=${invoice.supplier_name}, score=${score}`);
+    matcherDebug(`  📋 Invoice ${invoice.id}: amount=${invoice.amount}, supplier=${invoice.supplier_name}, score=${score}`);
     
     // Minimum threshold kontrolü
     if (score >= SUGGESTION_THRESHOLD) {
       const hasAmountMatch = isAmountMatch(matchingAmount, invoice.amount);
       const matchType = determineMatchType(score, hasAmountMatch);
       
-      console.log(`  ✅ Match found! Type: ${matchType}, Score: ${score}, Reasons: ${reasons.join(', ')}`);
+      matcherDebug(`  ✅ Match found! Type: ${matchType}, Score: ${score}, Reasons: ${reasons.join(', ')}`);
       
       allMatches.push({
         invoice,
@@ -680,7 +686,7 @@ export async function findMatchingInvoices(
         reasons
       });
     } else {
-      console.log(`  ❌ Score too low (${score} < ${SUGGESTION_THRESHOLD})`);
+      matcherDebug(`  ❌ Score too low (${score} < ${SUGGESTION_THRESHOLD})`);
     }
   }
   
@@ -693,7 +699,7 @@ export async function findMatchingInvoices(
     m => m.matchScore >= SUGGESTION_THRESHOLD && m.matchScore < AUTO_MATCH_THRESHOLD
   );
   
-  console.log(`🎯 Final results: ${exact.length} exact, ${suggested.length} suggested, noMatch: ${allMatches.length === 0}`);
+  matcherDebug(`🎯 Final results: ${exact.length} exact, ${suggested.length} suggested, noMatch: ${allMatches.length === 0}`);
   
   return {
     exact,
@@ -931,7 +937,7 @@ export async function findMatchingCurrentAccountSuppliers(
   const sorted = results.sort((a, b) => b.matchScore - a.matchScore);
 
   if (sorted.length > 0) {
-    console.log(`🏢 [SupplierMatch] "${item.transactionName}": en iyi → "${sorted[0].supplier.name}" (%${sorted[0].matchScore}, ${sorted[0].matchType})`);
+    matcherDebug(`🏢 [SupplierMatch] "${item.transactionName}": en iyi → "${sorted[0].supplier.name}" (%${sorted[0].matchScore}, ${sorted[0].matchType})`);
   }
 
   return sorted;

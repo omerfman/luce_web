@@ -166,15 +166,17 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Inserted ${insertedItems.length} items`);
 
-    // Automatic matching (async, don't wait)
-    console.log('🔄 Starting automatic matching...');
-    
-    // Run matching in background (fire and forget)
-    performAutoMatching(statement.id, parsed.items, companyId).catch(err => {
-      console.error('Auto-matching error:', err);
-    });
+    // Ağır eşleştirmeyi bir sonraki event loop turuna al — önce HTTP 200 + JSON dönsün (istemci takılmasın)
+    setTimeout(() => {
+      performAutoMatching(statement.id, parsed.items, companyId).catch((err) => {
+        console.error('Auto-matching error:', err);
+      });
+    }, 0);
 
-    // Return success immediately
+    console.log(
+      `[card-statements/upload] response → client | statementId=${statement.id} | file=${file.name} | items=${insertedItems.length} (auto-match queued)`
+    );
+
     return NextResponse.json({
       success: true,
       statement: {

@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { checkApiPermission } from '@/lib/api/permissions';
 
@@ -14,10 +15,15 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+function uuidEqual(a: string, b: string): boolean {
+  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
+  noStore();
   try {
     // Auth & Permission check
     const authResult = await checkApiPermission(request, 'card_statements', 'read');
@@ -25,9 +31,13 @@ export async function GET(
       return authResult.response;
     }
 
-    // Get params
-    const params = await Promise.resolve(context.params);
-    const statementId = params.id;
+    const params =
+      context.params instanceof Promise ? await context.params : context.params;
+    const statementId = params.id?.trim();
+
+    if (!statementId) {
+      return NextResponse.json({ error: 'Geçersiz ekstre kimliği' }, { status: 400 });
+    }
 
     // Get statement with items and matches
     const { data: statement, error: stmtError } = await supabaseAdmin
@@ -140,6 +150,7 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
+  noStore();
   try {
     // Auth & Permission check
     const authResult = await checkApiPermission(request, 'card_statements', 'delete');
@@ -147,15 +158,45 @@ export async function DELETE(
       return authResult.response;
     }
 
-    // Get params
-    const params = await Promise.resolve(context.params);
-    const statementId = params.id;
+    const { companyId } = authResult.context;
 
-    // Delete statement (cascade will delete items and matches)
-    const { error: deleteError } = await supabaseAdmin
+    const params =
+      context.params instanceof Promise ? await context.params : context.params;
+    const statementId = params.id?.trim();
+
+    if (!statementId) {
+      return NextResponse.json({ error: 'Geçersiz ekstre kimliği' }, { status: 400 });
+    }
+
+    const { data: row, error: fetchError } = await supabaseAdmin
+      .from('card_statements')
+      .select('id, company_id')
+      .eq('id', statementId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Delete prefetch error:', fetchError);
+      return NextResponse.json({ error: 'Ekstre kontrol edilemedi' }, { status: 500 });
+    }
+
+    if (!row) {
+      return NextResponse.json({ error: 'Ekstre bulunamadı' }, { status: 404 });
+    }
+
+    if (!uuidEqual(String(row.company_id), String(companyId))) {
+      console.warn('[card-statements DELETE] company uyuşmuyor', {
+        statementId,
+        rowCompany: row.company_id,
+        userCompany: companyId,
+      });
+      return NextResponse.json({ error: 'Bu ekstreyi silme yetkiniz yok' }, { status: 403 });
+    }
+
+    const { data: deleted, error: deleteError } = await supabaseAdmin
       .from('card_statements')
       .delete()
-      .eq('id', statementId);
+      .eq('id', statementId)
+      .select('id');
 
     if (deleteError) {
       console.error('Delete statement error:', deleteError);
@@ -165,9 +206,20 @@ export async function DELETE(
       );
     }
 
+    if (!deleted || deleted.length === 0) {
+      console.error('[card-statements DELETE] Silme sonrası 0 satır (beklenmeyen)', {
+        statementId,
+      });
+      return NextResponse.json(
+        { error: 'Ekstre silinemedi (veritabanı yanıtı beklenmedik)' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Ekstre başarıyla silindi'
+      message: 'Ekstre başarıyla silindi',
+      deletedId: deleted[0].id,
     });
 
   } catch (error: any) {

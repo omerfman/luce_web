@@ -6,16 +6,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic';
+import { unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { checkApiPermission } from '@/lib/api/permissions';
+
+export const dynamic = 'force-dynamic';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function GET(request: NextRequest) {
+  noStore();
   try {
     // Auth & Permission check
     const authResult = await checkApiPermission(request, 'card_statements', 'read');
@@ -32,10 +34,11 @@ export async function GET(request: NextRequest) {
     const startMonth = searchParams.get('startMonth');
     const endMonth = searchParams.get('endMonth');
 
-    // Build query
+    // Build query (users embed kaldırıldı — gereksiz join bazı ortamlarda satır döndürmeyi etkileyebiliyordu)
     let query = supabaseAdmin
       .from('card_statements')
-      .select(`
+      .select(
+        `
         id,
         file_name,
         card_last_four,
@@ -46,12 +49,9 @@ export async function GET(request: NextRequest) {
         matched_count,
         uploaded_at,
         created_at,
-        uploaded_by:users!uploaded_by_user_id (
-          id,
-          name,
-          email
-        )
-      `)
+        uploaded_by_user_id
+      `
+      )
       .eq('company_id', companyId)
       .order('uploaded_at', { ascending: false });
 
@@ -120,10 +120,17 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
-      statements: statementsWithStats,
-      total: statements.length
-    });
+    return NextResponse.json(
+      {
+        statements: statementsWithStats,
+        total: statements.length
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, must-revalidate',
+        },
+      }
+    );
 
   } catch (error: any) {
     console.error('List statements error:', error);

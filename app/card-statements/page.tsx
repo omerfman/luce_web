@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -9,13 +9,33 @@ import { Button } from '@/components/ui/Button';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { supabase } from '@/lib/supabase/client';
 import type { CardStatement } from '@/types/card-statement';
+
+/** Bearer token — getSession bazen boş dönebiliyor; refresh ile yenile */
+async function getAccessToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) return session.access_token;
+  const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+  return refreshed?.access_token ?? null;
+}
 
 export default function CardStatementsPage() {
   const router = useRouter();
   const { user, company, hasPermission } = useAuth();
-  const userId = user?.id; // Extract ID to prevent full user object re-renders
-  const companyId = company?.id; // Extract ID to prevent full company object re-renders
+  const userId = user?.id;
+  /** company relation bazen gecikmeli; kullanıcı satırındaki company_id her zaman yedek */
+  const companyId = company?.id ?? user?.company_id ?? null;
+
+  /** Eşzamanlı GET'lerde eski yanıtın listeyi ezmesini engelle */
+  const loadSeqRef = useRef(0);
+  /** Yükleme sonrası gecikmeli listeyi yenileyen zamanlayıcılar — silmeden sonra tetiklenirse eski listeyi geri yazar */
+  const uploadListRefreshTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  function clearUploadListRefreshTimers() {
+    uploadListRefreshTimerIdsRef.current.forEach(clearTimeout);
+    uploadListRefreshTimerIdsRef.current = [];
+  }
   
   // Permission checks - hasPermission içinde super admin kontrolü var
   const canRead = hasPermission('card_statements', 'read');
@@ -62,29 +82,55 @@ export default function CardStatementsPage() {
       console.log('📊 [CardStatements] Initial load triggered - userId:', userId);
       loadStatements();
     }
-  }, [userId, companyId]); // Use userId and companyId instead of full objects to prevent re-renders
+  }, [userId, companyId]);
 
   async function loadStatements() {
+    const seq = ++loadSeqRef.current;
     setIsLoading(true);
     try {
-      const { data: { session } } = await (await import('@/lib/supabase/client')).supabase.auth.getSession();
-      
-      const response = await fetch('/api/card-statements', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+      const token = await getAccessToken();
+      if (!token) {
+        console.error('Load statements: oturum jetonu yok (getSession + refresh sonrası)');
+        return;
+      }
+
+      const response = await fetch(
+        `/api/card-statements?_=${encodeURIComponent(String(Date.now()))}`,
+        {
+          cache: 'reload',
+          credentials: 'same-origin',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Pragma: 'no-cache',
+            'Cache-Control': 'no-cache',
+          },
         }
-      });
+      );
 
       if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        console.error('GET /api/card-statements failed:', response.status, errBody);
         throw new Error('Ekstreler yüklenemedi');
       }
 
       const data = await response.json();
-      setStatements(data.statements || []);
+      const incoming = (data.statements || []) as CardStatement[];
+
+      if (seq !== loadSeqRef.current) return;
+
+      // Yalnızca sunucu listesi — önceki state ile merge yok (hayalet satır oluşturuyordu)
+      setStatements(
+        [...incoming].sort(
+          (a, b) =>
+            new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
+        )
+      );
     } catch (error) {
       console.error('Load statements error:', error);
     } finally {
-      setIsLoading(false);
+      if (seq === loadSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   }
   
@@ -121,7 +167,12 @@ export default function CardStatementsPage() {
 
     setIsUploading(true);
     setUploadError(null);
-    
+
+    console.info('[Luce ekstre] Toplu yükleme başladı', {
+      dosyaSayısı: uploadFiles.length,
+      dosyalar: uploadFiles.map((f) => f.file.name),
+    });
+
     let successCount = 0;
     let errorCount = 0;
 
@@ -140,39 +191,81 @@ export default function CardStatementsPage() {
       ));
 
       try {
-        const { data: { session } } = await (await import('@/lib/supabase/client')).supabase.auth.getSession();
-        
+        const token = await getAccessToken();
+        if (!token) {
+          throw new Error('Oturum bulunamadı — sayfayı yenileyip tekrar deneyin');
+        }
+
         const formData = new FormData();
         formData.append('file', uploadFile.file);
         if (commonCardLastFour) formData.append('cardLastFour', commonCardLastFour);
         if (commonCardHolderName) formData.append('cardHolderName', commonCardHolderName);
 
+        console.info('[Luce ekstre] POST /api/card-statements/upload', uploadFile.file.name);
+
         const response = await fetch('/api/card-statements/upload', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
-            'Authorization': `Bearer ${session?.access_token}`
+            Authorization: `Bearer ${token}`,
           },
-          body: formData
+          body: formData,
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          // Log validation errors to console if present
           if (data.validationErrors && data.validationErrors.length > 0) {
             console.error('Validation errors:', data.validationErrors);
           }
           throw new Error(data.error || 'Yükleme başarısız');
         }
 
-        // Success
-        setUploadFiles(prev => prev.map(f => 
-          f.id === uploadFile.id 
-            ? { ...f, status: 'success' as const, message: data.message } 
-            : f
-        ));
+        setUploadFiles((prev) =>
+          prev.map((f) =>
+            f.id === uploadFile.id
+              ? { ...f, status: 'success' as const, message: data.message }
+              : f
+          )
+        );
         successCount++;
-        
+
+        console.info('[Luce ekstre] Yükleme başarılı', {
+          statementId: data.statement?.id,
+          dosya: data.statement?.file_name,
+          status: response.status,
+        });
+
+        // Liste GET başarısız olsa bile yeni ekstreyi göster (API zaten kaydetti)
+        if (data.statement && user && companyId) {
+          const s = data.statement as {
+            id: string;
+            file_name: string;
+            total_transactions: number;
+            total_amount: number;
+            card_last_four?: string;
+            statement_month?: string;
+          };
+          const now = new Date().toISOString();
+          const row: CardStatement = {
+            id: s.id,
+            company_id: companyId,
+            uploaded_by_user_id: user.id,
+            file_name: s.file_name,
+            card_last_four: s.card_last_four,
+            card_holder_name: commonCardHolderName || undefined,
+            statement_month: s.statement_month,
+            total_transactions: s.total_transactions,
+            total_amount: s.total_amount,
+            matched_count: 0,
+            uploaded_at: now,
+            created_at: now,
+          };
+          setStatements((prev) => {
+            const rest = prev.filter((x) => x.id !== row.id);
+            return [row, ...rest];
+          });
+        }
       } catch (error: any) {
         console.error(`Upload error for ${uploadFile.file.name}:`, error);
         setUploadFiles(prev => prev.map(f => 
@@ -194,9 +287,14 @@ export default function CardStatementsPage() {
     
     alert(summary);
     
-    // Reload statements if at least one success
     if (successCount > 0) {
-      loadStatements();
+      clearUploadListRefreshTimers();
+      [400, 2000, 6000].forEach((ms) => {
+        const tid = setTimeout(() => {
+          void loadStatements();
+        }, ms);
+        uploadListRefreshTimerIdsRef.current.push(tid);
+      });
     }
   }
 
@@ -213,20 +311,45 @@ export default function CardStatementsPage() {
     }
 
     try {
-      const { data: { session } } = await (await import('@/lib/supabase/client')).supabase.auth.getSession();
-      
-      const response = await fetch(`/api/card-statements/${statementId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Silme işlemi başarısız');
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error('Oturum bulunamadı');
       }
 
-      loadStatements();
+      clearUploadListRefreshTimers();
+
+      const response = await fetch(
+        `/api/card-statements/${encodeURIComponent(statementId)}`,
+        {
+          method: 'DELETE',
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Cache-Control': 'no-cache',
+          },
+        }
+      );
+
+      if (response.status === 404) {
+        setStatements((prev) => prev.filter((s) => s.id !== statementId));
+        router.refresh();
+        return;
+      }
+
+      if (!response.ok) {
+        let msg = 'Silme işlemi başarısız';
+        try {
+          const body = await response.json();
+          if (body?.error) msg = body.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+
+      setStatements((prev) => prev.filter((s) => s.id !== statementId));
+      router.refresh();
     } catch (error: any) {
       console.error('Delete error:', error);
       alert(`❌ ${error.message}`);

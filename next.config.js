@@ -145,20 +145,14 @@ const withPWA = require('next-pwa')({
         networkTimeoutSeconds: 10
       }
     },
+    // API yanıtları asla önbelleğe alınmamalı — aksi halde liste/POST sonrası eski veri görülebilir
+    // (NetworkFirst + timeout veya kısa TTL ile boş ekstre listesi cache'ten dönebiliyordu).
     {
       urlPattern: ({ url }) => {
         const isSameOrigin = self.origin === url.origin;
         return isSameOrigin && url.pathname.startsWith('/api/');
       },
-      handler: 'NetworkFirst',
-      options: {
-        cacheName: 'apis',
-        expiration: {
-          maxEntries: 16,
-          maxAgeSeconds: 5 * 60 // 5 minutes
-        },
-        networkTimeoutSeconds: 10
-      }
+      handler: 'NetworkOnly'
     }
   ]
 });
