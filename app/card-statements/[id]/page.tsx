@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { checkPermission } from '@/lib/permissions';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
 import type { CardStatement, CardStatementItem, StatementInvoiceMatch } from '@/types/card-statement';
+import { makeCardGroupKeyFromRow, parseCardKey } from '@/lib/card-groups';
 
 interface StatementDetail {
   statement: CardStatement;
@@ -29,8 +30,10 @@ interface StatementDetail {
 export default function StatementDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { user, permissions } = useAuth();
   const statementId = params.id as string;
+  const cardKeyFilter = searchParams.get('cardKey');
   const userId = user?.id; // Extract ID to prevent full user object re-renders
   
   // Permission checks
@@ -1076,7 +1079,14 @@ export default function StatementDetailPage() {
   
   // Filtreleme logic
   let filteredItems = items;
-  
+
+  if (cardKeyFilter) {
+    const decoded = decodeURIComponent(cardKeyFilter);
+    filteredItems = filteredItems.filter(
+      (item) => makeCardGroupKeyFromRow(item, statement) === decoded
+    );
+  }
+
   // Match status filter
   if (filterMatchStatus !== 'all') {
     filteredItems = filteredItems.filter(item => {
@@ -1138,6 +1148,28 @@ export default function StatementDetailPage() {
     });
   }
 
+  const displayStats = cardKeyFilter
+    ? {
+        total: filteredItems.length,
+        autoMatched: filteredItems.filter((i) => i.is_matched).length,
+        suggested: filteredItems.filter(
+          (i) => !i.is_matched && i.match_confidence > 0
+        ).length,
+        noMatch: filteredItems.filter(
+          (i) => !i.is_matched && i.match_confidence === 0
+        ).length,
+      }
+    : stats;
+
+  const pettyCashDisplay = cardKeyFilter
+    ? filteredItems.filter(
+        (item) =>
+          !item.is_matched &&
+          item.project_id &&
+          item.transaction_type !== 'payment'
+      ).length
+    : pettyCashCount;
+
   return (
     <>
       <Sidebar>
@@ -1155,6 +1187,28 @@ export default function StatementDetailPage() {
             <h1 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2 truncate">
               {statement.file_name}
             </h1>
+
+            {cardKeyFilter && (() => {
+              const { lastFour, holder } = parseCardKey(decodeURIComponent(cardKeyFilter));
+              const four = (lastFour || '').replace(/\D/g, '').slice(-4) || '••••';
+              return (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                <span>
+                  Sadece seçili kartın hareketleri: {holder} · ****{four}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-indigo-300"
+                  onClick={() =>
+                    router.replace(`/card-statements/${statementId}`)
+                  }
+                >
+                  Tüm kartları göster
+                </Button>
+              </div>
+              );
+            })()}
             
             <div className="flex flex-wrap gap-3 lg:gap-6 text-xs lg:text-sm text-gray-600">
               {statement.card_last_four && (
@@ -1174,35 +1228,35 @@ export default function StatementDetailPage() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
             <Card padding="sm">
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+                <div className="text-2xl font-bold text-gray-900">{displayStats.total}</div>
                 <div className="text-xs text-gray-600 mt-1">Toplam İşlem</div>
               </div>
             </Card>
             
             <Card padding="sm">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.autoMatched}</div>
+                <div className="text-2xl font-bold text-green-600">{displayStats.autoMatched}</div>
                 <div className="text-xs text-gray-600 mt-1">Eşleşti</div>
               </div>
             </Card>
             
             <Card padding="sm">
               <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">{pettyCashCount}</div>
+                <div className="text-2xl font-bold text-purple-600">{pettyCashDisplay}</div>
                 <div className="text-xs text-gray-600 mt-1">💼 Kasa Fişi</div>
               </div>
             </Card>
             
             <Card padding="sm">
               <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-600">{stats.suggested}</div>
+                <div className="text-2xl font-bold text-yellow-600">{displayStats.suggested}</div>
                 <div className="text-xs text-gray-600 mt-1">Öneri Var</div>
               </div>
             </Card>
             
             <Card padding="sm">
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">{stats.noMatch - pettyCashCount}</div>
+                <div className="text-2xl font-bold text-red-600">{displayStats.noMatch - pettyCashDisplay}</div>
                 <div className="text-xs text-gray-600 mt-1">Atanmadı</div>
               </div>
             </Card>
@@ -1337,7 +1391,7 @@ export default function StatementDetailPage() {
             
             <div className="mt-3 text-xs text-gray-600 flex items-center justify-between flex-wrap gap-2">
               <span>Gösterilen: <strong>{filteredItems.length}</strong> / {items.length} işlem</span>
-              {(filterMatchStatus !== 'all' || filterTransactionType !== 'all' || filterProjectId !== 'all' || filterCardNumber !== 'all' || showOnlyPettyCash || showOnlyUnassigned) && (
+              {(filterMatchStatus !== 'all' || filterTransactionType !== 'all' || filterProjectId !== 'all' || filterCardNumber !== 'all' || showOnlyPettyCash || showOnlyUnassigned || !!cardKeyFilter) && (
                 <button
                   onClick={() => {
                     setFilterMatchStatus('all');
@@ -1346,6 +1400,9 @@ export default function StatementDetailPage() {
                     setFilterCardNumber('all');
                     setShowOnlyPettyCash(false);
                     setShowOnlyUnassigned(false);
+                    if (cardKeyFilter) {
+                      router.replace(`/card-statements/${statementId}`);
+                    }
                   }}
                   className="text-xs text-blue-600 hover:text-blue-800 underline"
                 >

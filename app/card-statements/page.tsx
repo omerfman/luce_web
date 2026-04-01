@@ -11,6 +11,25 @@ import { Input } from '@/components/ui/Input';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
 import type { CardStatement } from '@/types/card-statement';
+import { CreditCardTile } from '@/components/card-statements/CreditCardTile';
+
+interface StatementCardGroup {
+  cardKey: string;
+  card_last_four: string;
+  card_holder_name: string;
+  item_count: number;
+}
+
+interface StatementWithCardsRow {
+  statement_id: string;
+  file_name: string;
+  statement_month: string | null;
+  uploaded_at: string;
+  total_transactions: number;
+  total_amount: number;
+  matched_count: number;
+  cards: StatementCardGroup[];
+}
 
 /** Bearer token — getSession bazen boş dönebiliyor; refresh ile yenile */
 async function getAccessToken(): Promise<string | null> {
@@ -41,6 +60,7 @@ export default function CardStatementsPage() {
   const canRead = hasPermission('card_statements', 'read');
   const canCreate = hasPermission('card_statements', 'create');
   const canDelete = hasPermission('card_statements', 'delete');
+  const canUpdate = hasPermission('card_statements', 'update');
   
   // Debug logging
   useEffect(() => {
@@ -55,6 +75,8 @@ export default function CardStatementsPage() {
   }, [canRead, canCreate, canDelete, user]);
   
   const [statements, setStatements] = useState<CardStatement[]>([]);
+  const [statementsWithCards, setStatementsWithCards] = useState<StatementWithCardsRow[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -94,9 +116,9 @@ export default function CardStatementsPage() {
         return;
       }
 
-      const response = await fetch(
-        `/api/card-statements?_=${encodeURIComponent(String(Date.now()))}`,
-        {
+      const ts = encodeURIComponent(String(Date.now()));
+      const [stmtRes, byStmtRes] = await Promise.all([
+        fetch(`/api/card-statements?_=${ts}`, {
           cache: 'reload',
           credentials: 'same-origin',
           headers: {
@@ -104,27 +126,44 @@ export default function CardStatementsPage() {
             Pragma: 'no-cache',
             'Cache-Control': 'no-cache',
           },
-        }
-      );
+        }),
+        fetch(`/api/card-statements/cards/by-statement?_=${ts}`, {
+          cache: 'reload',
+          credentials: 'same-origin',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Pragma: 'no-cache',
+            'Cache-Control': 'no-cache',
+          },
+        }),
+      ]);
 
-      if (!response.ok) {
-        const errBody = await response.text().catch(() => '');
-        console.error('GET /api/card-statements failed:', response.status, errBody);
+      if (!stmtRes.ok) {
+        const errBody = await stmtRes.text().catch(() => '');
+        console.error('GET /api/card-statements failed:', stmtRes.status, errBody);
         throw new Error('Ekstreler yüklenemedi');
       }
 
-      const data = await response.json();
+      const data = await stmtRes.json();
       const incoming = (data.statements || []) as CardStatement[];
+
+      let byRows: StatementWithCardsRow[] = [];
+      if (byStmtRes.ok) {
+        const bd = await byStmtRes.json();
+        byRows = (bd.statements || []) as StatementWithCardsRow[];
+      } else {
+        console.warn('GET /api/card-statements/cards/by-statement failed:', byStmtRes.status);
+      }
 
       if (seq !== loadSeqRef.current) return;
 
-      // Yalnızca sunucu listesi — önceki state ile merge yok (hayalet satır oluşturuyordu)
       setStatements(
         [...incoming].sort(
           (a, b) =>
             new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
         )
       );
+      setStatementsWithCards(byRows);
     } catch (error) {
       console.error('Load statements error:', error);
     } finally {
@@ -133,7 +172,34 @@ export default function CardStatementsPage() {
       }
     }
   }
-  
+
+  async function saveCardHolderName(cardKey: string, newName: string) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Oturum bulunamadı');
+    }
+    const response = await fetch('/api/card-statements/cards/holder', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ cardKey, new_holder_name: newName }),
+    });
+    if (!response.ok) {
+      let msg = 'Kayıt başarısız';
+      try {
+        const body = await response.json();
+        if (body?.error) msg = body.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    await loadStatements();
+  }
+
   function handleFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -306,7 +372,11 @@ export default function CardStatementsPage() {
   }
 
   async function handleDelete(statementId: string) {
-    if (!confirm('Bu ekstre ve tüm eşleştirmeleri silinecek. Emin misiniz?')) {
+    if (
+      !confirm(
+        'Bu ekstre dosyası silinecek: içindeki tüm kartların hareketleri ve eşleştirmeleri kaldırılır. Emin misiniz?'
+      )
+    ) {
       return;
     }
 
@@ -333,6 +403,7 @@ export default function CardStatementsPage() {
 
       if (response.status === 404) {
         setStatements((prev) => prev.filter((s) => s.id !== statementId));
+        setStatementsWithCards((prev) => prev.filter((r) => r.statement_id !== statementId));
         router.refresh();
         return;
       }
@@ -349,6 +420,7 @@ export default function CardStatementsPage() {
       }
 
       setStatements((prev) => prev.filter((s) => s.id !== statementId));
+      setStatementsWithCards((prev) => prev.filter((r) => r.statement_id !== statementId));
       router.refresh();
     } catch (error: any) {
       console.error('Delete error:', error);
@@ -356,24 +428,53 @@ export default function CardStatementsPage() {
     }
   }
 
-  // Filter statements
-  const filteredStatements = statements.filter(stmt => {
-    if (searchQuery && !stmt.file_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !stmt.card_holder_name?.toLowerCase().includes(searchQuery.toLowerCase())) {
+  const filteredStatements = statements.filter((stmt) => {
+    if (
+      searchQuery &&
+      !stmt.file_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !stmt.card_holder_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    ) {
       return false;
     }
-    
     if (cardFilter && stmt.card_last_four !== cardFilter) {
       return false;
     }
-    
     return true;
   });
 
-  // Get unique card numbers for filter
-  const uniqueCards = Array.from(new Set(
-    statements.map(s => s.card_last_four).filter(Boolean)
-  ));
+  const filteredCardViewRows = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    let rows = statementsWithCards;
+    if (q) {
+      rows = rows.filter((row) => {
+        if (row.file_name.toLowerCase().includes(q)) return true;
+        return row.cards.some((c) => {
+          if (c.card_holder_name.toLowerCase().includes(q)) return true;
+          const qDigits = q.replace(/\D/g, '');
+          if (!qDigits) return false;
+          const last = (c.card_last_four || '').replace(/\D/g, '');
+          return last.includes(qDigits) || last.endsWith(qDigits.slice(-4));
+        });
+      });
+    }
+    if (cardFilter) {
+      rows = rows.filter((row) =>
+        row.cards.some((c) => c.card_last_four === cardFilter)
+      );
+    }
+    return rows;
+  })();
+
+  const uniqueCards = Array.from(
+    new Set(
+      [
+        ...statements.map((s) => s.card_last_four).filter(Boolean),
+        ...statementsWithCards.flatMap((r) =>
+          r.cards.map((c) => c.card_last_four)
+        ),
+      ].filter(Boolean)
+    )
+  );
 
   if (!user) {
     return <div className="flex items-center justify-center min-h-screen">Yükleniyor...</div>;
@@ -404,6 +505,31 @@ export default function CardStatementsPage() {
             <p className="text-sm text-gray-600">
               Kredi kartı ekstrelerini yükleyip faturalarla eşleştirin
             </p>
+          </div>
+
+          <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1 gap-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Ekstre listesi
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                viewMode === 'cards'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Kart görünümü
+            </button>
           </div>
 
           {/* Actions & Filters */}
@@ -438,16 +564,108 @@ export default function CardStatementsPage() {
             )}
           </div>
 
-          {/* Statements List */}
+          {viewMode === 'cards' && (
+            <p className="text-xs text-gray-500 mb-3 -mt-1">
+              Her ekstrede birden fazla kart varsa ayrı kartlar halinde görünür. İsim alanını
+              güncelleyerek aramada kolayca bulun. Bir karta tıklayınca yalnızca o kartın
+              hareketleri açılır.
+            </p>
+          )}
+
+          {/* Statements List / Kart görünümü */}
           {isLoading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               <p className="mt-4 text-gray-600">Yükleniyor...</p>
             </div>
+          ) : viewMode === 'cards' ? (
+            filteredCardViewRows.length === 0 ? (
+              <Card className="text-center py-12">
+                <p className="text-gray-500 mb-4">
+                  {searchQuery || cardFilter
+                    ? 'Arama kriterlerine uygun ekstre bulunamadı'
+                    : 'Henüz ekstre yüklenmemiş'}
+                </p>
+                {!searchQuery && !cardFilter && (
+                  <Button onClick={() => setIsUploadModalOpen(true)}>
+                    İlk Ekstreyi Yükle
+                  </Button>
+                )}
+              </Card>
+            ) : (
+              <div className="space-y-10">
+                {filteredCardViewRows.map((row) => {
+                  const matchPct =
+                    row.total_transactions > 0
+                      ? Math.round((row.matched_count / row.total_transactions) * 100)
+                      : 0;
+                  return (
+                    <section key={row.statement_id} className="border-b border-gray-100 pb-10 last:border-0 last:pb-0">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold text-gray-900 truncate">
+                            {row.file_name}
+                          </h2>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {row.statement_month
+                              ? new Date(row.statement_month).toLocaleDateString('tr-TR', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                })
+                              : 'Dönem yok'}{' '}
+                            · {row.total_transactions} işlem · {formatCurrency(row.total_amount)} ·
+                            eşleşme %{matchPct}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 flex-shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.push(`/card-statements/${row.statement_id}`)}
+                          >
+                            Tüm kartlar (özet)
+                          </Button>
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDelete(row.statement_id)}
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              Ekstreyi sil
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-6">
+                        {row.cards.map((c) => (
+                          <CreditCardTile
+                            key={`${row.statement_id}-${c.cardKey}`}
+                            cardKey={c.cardKey}
+                            cardLastFour={c.card_last_four}
+                            cardHolderName={c.card_holder_name}
+                            itemCount={c.item_count}
+                            canEditName={canUpdate}
+                            onOpen={() =>
+                              router.push(
+                                `/card-statements/${row.statement_id}?cardKey=${encodeURIComponent(c.cardKey)}`
+                              )
+                            }
+                            onSaveHolderName={saveCardHolderName}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            )
           ) : filteredStatements.length === 0 ? (
             <Card className="text-center py-12">
               <p className="text-gray-500 mb-4">
-                {searchQuery || cardFilter ? 'Arama kriterlerine uygun ekstre bulunamadı' : 'Henüz ekstre yüklenmemiş'}
+                {searchQuery || cardFilter
+                  ? 'Arama kriterlerine uygun ekstre bulunamadı'
+                  : 'Henüz ekstre yüklenmemiş'}
               </p>
               {!searchQuery && !cardFilter && (
                 <Button onClick={() => setIsUploadModalOpen(true)}>

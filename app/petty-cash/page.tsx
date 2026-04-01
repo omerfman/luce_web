@@ -323,12 +323,11 @@ export default function PettyCashPage() {
 
   if (!user || isLoading) {
     return (
-      <div className="flex h-screen overflow-hidden bg-gray-50">
-        <Sidebar><div /></Sidebar>
-        <div className="flex-1 flex items-center justify-center">
+      <Sidebar>
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
-      </div>
+      </Sidebar>
     );
   }
 
@@ -337,11 +336,8 @@ export default function PettyCashPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <Sidebar><div /></Sidebar>
-      
-      <div className="flex-1 overflow-auto">
-        <div className="p-8">
+    <Sidebar>
+      <div className="p-8">
           {/* Header */}
           <div className="mb-6 flex items-start justify-between">
             <div>
@@ -529,8 +525,7 @@ export default function PettyCashPage() {
               </>
             )}
           </Card>
-        </div>
       </div>
-    </div>
+    </Sidebar>
   );
 }
