@@ -2,8 +2,10 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import ExcelJS from 'exceljs';
 import { InformalPayment, Project, Supplier } from '@/types';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { Button } from '@/components/ui/Button';
 import { Pagination } from '@/components/ui/Pagination';
 import { ContractPaymentModal } from '@/components/informal-payments/ContractPaymentModal';
 import {
@@ -275,6 +277,251 @@ function InformalPaymentsContent() {
     setCurrentPage(1);
   };
 
+  async function handleExportExcel() {
+    try {
+      const dataToExport = sortedPayments.map((payment, index) => {
+        let sozlesmeDurumu = '-';
+        if (payment.contract_pdf_url) sozlesmeDurumu = 'PDF Var';
+        else if (payment.has_contract) sozlesmeDurumu = 'PDF Yok';
+
+        const pdfEksik = Boolean(payment.has_contract && !payment.contract_pdf_url);
+
+        return {
+          sira: index + 1,
+          tarih: formatDate(payment.payment_date),
+          taseron: payment.supplier?.name || '-',
+          proje: payment.project?.name || '-',
+          tutar: Number(payment.amount),
+          odemeYontemi: payment.payment_method || '-',
+          sozlesme: sozlesmeDurumu,
+          makbuzNo: payment.receipt_number || '-',
+          aciklama: payment.description || '-',
+          notlar: payment.notes || '-',
+          pdfEksik,
+        };
+      });
+
+      if (dataToExport.length === 0) {
+        alert('Dışa aktarılacak ödeme bulunamadı!');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Gayri Resmi Ödemeler');
+
+      const headers = [
+        'Sıra',
+        'Tarih',
+        'Açıklama',
+        'Taşeron',
+        '',
+        'Tutar',
+        'Proje',
+        'Ödeme Yöntemi',
+        'Sözleşme',
+        'Makbuz No',
+        'Notlar',
+      ];
+
+      worksheet.columns = [
+        { key: 'sira', width: 8 },
+        { key: 'tarih', width: 13 },
+        { key: 'aciklama', width: 40 },
+        { key: 'taseron', width: 28 },
+        { key: 'bos', width: 6 },
+        { key: 'tutar', width: 16 },
+        { key: 'proje', width: 28 },
+        { key: 'odemeYontemi', width: 18 },
+        { key: 'sozlesme', width: 14 },
+        { key: 'makbuzNo', width: 16 },
+        { key: 'notlar', width: 28 },
+      ];
+
+      const headerRow = worksheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4472C4' },
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11,
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } },
+        };
+      });
+
+      let totalAmount = 0;
+      dataToExport.forEach((rowData, index) => {
+        totalAmount += typeof rowData.tutar === 'number' ? rowData.tutar : 0;
+
+        const row = worksheet.addRow([
+          rowData.sira,
+          rowData.tarih,
+          rowData.aciklama,
+          rowData.taseron,
+          '',
+          rowData.tutar,
+          rowData.proje,
+          rowData.odemeYontemi,
+          rowData.sozlesme,
+          rowData.makbuzNo,
+          rowData.notlar,
+        ]);
+
+        const pdfEksik = rowData.pdfEksik;
+        const isEvenRow = (index + 1) % 2 === 0;
+        const bgColor = pdfEksik ? 'FFFFEB9C' : isEvenRow ? 'FFF2F2F2' : 'FFFFFFFF';
+
+        row.eachCell((cell, colNumber) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: bgColor },
+          };
+
+          if (pdfEksik) {
+            cell.font = {
+              size: 10,
+              color: { argb: 'FFB45309' },
+              bold: true,
+            };
+          } else {
+            cell.font = { size: 10 };
+          }
+
+          if (colNumber === 6) {
+            cell.numFmt = '#,##0.00 "₺"';
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'right',
+            };
+          } else {
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'left',
+              wrapText: colNumber === 3 || colNumber === 11,
+            };
+          }
+
+          if (pdfEksik) {
+            cell.border = {
+              top: { style: 'medium', color: { argb: 'FFD97706' } },
+              left: { style: 'medium', color: { argb: 'FFD97706' } },
+              bottom: { style: 'medium', color: { argb: 'FFD97706' } },
+              right: { style: 'medium', color: { argb: 'FFD97706' } },
+            };
+          } else {
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+              right: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+            };
+          }
+        });
+      });
+
+      const totalRow = worksheet.addRow([
+        '',
+        '',
+        '',
+        '',
+        'TOPLAM',
+        totalAmount,
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
+
+      totalRow.eachCell((cell, colNumber) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF2E7D32' },
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: 'FFFFFFFF' },
+          size: 11,
+        };
+
+        if (colNumber === 6) {
+          cell.numFmt = '#,##0.00 "₺"';
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right',
+          };
+        } else if (colNumber === 5) {
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'right',
+          };
+        } else {
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: 'center',
+          };
+        }
+
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'medium', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } },
+        };
+      });
+
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: dataToExport.length + 1, column: headers.length },
+      };
+
+      const date = new Date().toISOString().split('T')[0];
+      let fileName = `GayriResmiOdemeler_${date}`;
+      if (filters.projectId) {
+        const project = projects.find((p) => p.id === filters.projectId);
+        if (project) fileName += `_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      if (filters.supplierId) {
+        const sub = subcontractors.find((s) => s.id === filters.supplierId);
+        if (sub) fileName += `_Taseron_${sub.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      if (filters.paymentMethod) {
+        fileName += `_Yontem_${filters.paymentMethod.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      if (filters.startDate) fileName += `_Baslangic_${filters.startDate}`;
+      if (filters.endDate) fileName += `_Bitis_${filters.endDate}`;
+      fileName += '.xlsx';
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('Excel dosyası oluşturulurken bir hata oluştu');
+    }
+  }
+
   // Reset to page 1 when payments data changes
   useEffect(() => {
     setCurrentPage(1);
@@ -340,7 +587,12 @@ function InformalPaymentsContent() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              {payments.length > 0 && !loading && (
+                <Button onClick={handleExportExcel} variant="ghost" className="justify-center">
+                  📊 Excel İndir
+                </Button>
+              )}
               <button
                 onClick={() => setIsContractModalOpen(true)}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-purple-700 hover:to-indigo-700 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
